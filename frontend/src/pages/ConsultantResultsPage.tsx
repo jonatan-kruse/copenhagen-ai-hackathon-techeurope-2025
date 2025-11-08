@@ -9,7 +9,7 @@ import { ConsultantCardSkeleton } from "@/components/ui/LoadingSkeleton";
 import type { Consultant } from "@/types/consultant";
 import type { ConsultantResultsState } from "@/types/navigation";
 import { getResumeDownloadUrl, buildApiUrl, matchConsultantsByRoles, type RoleQuery, type RoleMatchResult } from "@/lib/api";
-import { ArrowLeft, Loader2, FileText, Users, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, FileText, Users, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 
 export function ConsultantResultsPage() {
   const location = useLocation();
@@ -23,6 +23,9 @@ export function ConsultantResultsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRoleBased, setIsRoleBased] = useState(false);
+  const [expandedRoles, setExpandedRoles] = useState<Set<number>>(new Set());
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
+  const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
 
   const handleBack = () => {
     navigate("/");
@@ -88,6 +91,67 @@ export function ConsultantResultsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const toggleRoleExpanded = (roleIndex: number) => {
+    const newExpanded = new Set(expandedRoles);
+    if (newExpanded.has(roleIndex)) {
+      newExpanded.delete(roleIndex);
+    } else {
+      newExpanded.add(roleIndex);
+    }
+    setExpandedRoles(newExpanded);
+  };
+
+  const toggleDescriptionExpanded = (consultantId: string) => {
+    const newExpanded = new Set(expandedDescriptions);
+    if (newExpanded.has(consultantId)) {
+      newExpanded.delete(consultantId);
+    } else {
+      newExpanded.add(consultantId);
+    }
+    setExpandedDescriptions(newExpanded);
+  };
+
+  const toggleSkillsExpanded = (consultantId: string) => {
+    const newExpanded = new Set(expandedSkills);
+    if (newExpanded.has(consultantId)) {
+      newExpanded.delete(consultantId);
+    } else {
+      newExpanded.add(consultantId);
+    }
+    setExpandedSkills(newExpanded);
+  };
+
+  const truncateAtSentence = (text: string, maxLength: number = 150): string => {
+    if (!text || text.length <= maxLength) {
+      return text;
+    }
+    
+    // Find the last sentence ending before maxLength
+    const truncated = text.substring(0, maxLength);
+    const sentenceEndings = /[.!?]\s+/g;
+    let lastMatch: RegExpMatchArray | null = null;
+    let match: RegExpMatchArray | null;
+    
+    // Find all sentence endings in the truncated text
+    while ((match = sentenceEndings.exec(truncated)) !== null) {
+      lastMatch = match;
+    }
+    
+    // If we found a sentence ending, truncate there
+    if (lastMatch && lastMatch.index !== undefined) {
+      return text.substring(0, lastMatch.index + 1) + "...";
+    }
+    
+    // Otherwise, truncate at the last space before maxLength
+    const lastSpace = truncated.lastIndexOf(" ");
+    if (lastSpace > maxLength * 0.7) { // Only use space if it's not too early
+      return text.substring(0, lastSpace) + "...";
+    }
+    
+    // Fallback: just truncate at maxLength
+    return truncated + "...";
   };
 
   // Show nothing while redirecting
@@ -181,9 +245,37 @@ export function ConsultantResultsPage() {
                       <Card className="border-l-2 border-l-primary">
                         <CardHeader>
                           <CardTitle className="text-2xl font-semibold">{roleResult.role.title}</CardTitle>
-                          <CardDescription className="text-base mt-2 leading-relaxed">
-                            {roleResult.role.description}
-                          </CardDescription>
+                          <div className="mt-2">
+                            {roleResult.role.description.length > 150 ? (
+                              <>
+                                <CardDescription className={`text-base leading-relaxed ${!expandedRoles.has(roleIndex) ? 'line-clamp-2' : ''}`}>
+                                  {roleResult.role.description}
+                                </CardDescription>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleRoleExpanded(roleIndex)}
+                                  className="mt-2 h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
+                                >
+                                  {expandedRoles.has(roleIndex) ? (
+                                    <>
+                                      <ChevronUp className="h-3 w-3 mr-1" />
+                                      Show less
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronDown className="h-3 w-3 mr-1" />
+                                      Show more
+                                    </>
+                                  )}
+                                </Button>
+                              </>
+                            ) : (
+                              <CardDescription className="text-base leading-relaxed">
+                                {roleResult.role.description}
+                              </CardDescription>
+                            )}
+                          </div>
                           {roleResult.role.requiredSkills.length > 0 && (
                             <div className="mt-3">
                               <p className="text-sm font-medium mb-2 text-muted-foreground">Required Skills:</p>
@@ -210,48 +302,108 @@ export function ConsultantResultsPage() {
                             {roleResult.consultants.length} {roleResult.consultants.length === 1 ? "Candidate" : "Candidates"} Found
                           </h3>
                           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                            {roleResult.consultants.map((consultant, index) => (
-                              <Card key={consultant.id || `consultant-${roleIndex}-${index}`} className="transition-shadow hover:shadow-md">
-                                <CardHeader>
-                                  <div className="flex items-start justify-between gap-2">
-                                    <CardTitle className="text-xl font-semibold">{consultant.name}</CardTitle>
-                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                      {consultant.resumeId && (
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8"
-                                          onClick={() => handleDownloadResume(consultant.resumeId!, consultant.name)}
-                                          title="Download resume PDF"
-                                          aria-label="Download resume PDF"
-                                        >
-                                          <FileText className="h-4 w-4 text-primary" />
-                                        </Button>
+                            {roleResult.consultants.map((consultant, index) => {
+                              const consultantId = consultant.id || `consultant-${roleIndex}-${index}`;
+                              const isDescriptionExpanded = expandedDescriptions.has(consultantId);
+                              const isSkillsExpanded = expandedSkills.has(consultantId);
+                              const hasManySkills = consultant.skills.length > 6;
+                              const visibleSkills = hasManySkills && !isSkillsExpanded ? consultant.skills.slice(0, 6) : consultant.skills;
+                              const experience = consultant.experience || "";
+                              const hasLongExperience = experience.length > 150;
+                              const truncatedExperience = hasLongExperience && !isDescriptionExpanded ? truncateAtSentence(experience) : experience;
+                              
+                              return (
+                                <Card key={consultantId} className="transition-shadow hover:shadow-md">
+                                  <CardHeader>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <CardTitle className="text-xl font-semibold">{consultant.name}</CardTitle>
+                                      <div className="flex items-center gap-2 flex-shrink-0">
+                                        {consultant.resumeId && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8"
+                                            onClick={() => handleDownloadResume(consultant.resumeId!, consultant.name)}
+                                            title="Download resume PDF"
+                                            aria-label="Download resume PDF"
+                                          >
+                                            <FileText className="h-4 w-4 text-primary" />
+                                          </Button>
+                                        )}
+                                        {consultant.matchScore !== undefined && (
+                                          <MatchScoreBadge score={consultant.matchScore} />
+                                        )}
+                                      </div>
+                                    </div>
+                                    <CardDescription className="mt-2">
+                                      <AvailabilityBadge availability={consultant.availability} variant="text" />
+                                    </CardDescription>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="space-y-3">
+                                      {experience && (
+                                        <div>
+                                          <p className="text-sm text-muted-foreground leading-relaxed">
+                                            {truncatedExperience}
+                                          </p>
+                                          {hasLongExperience && (
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => toggleDescriptionExpanded(consultantId)}
+                                              className="mt-1 h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
+                                            >
+                                              {isDescriptionExpanded ? (
+                                                <>
+                                                  <ChevronUp className="h-3 w-3 mr-1" />
+                                                  Show less
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <ChevronDown className="h-3 w-3 mr-1" />
+                                                  Show more
+                                                </>
+                                              )}
+                                            </Button>
+                                          )}
+                                        </div>
                                       )}
-                                      {consultant.matchScore !== undefined && (
-                                        <MatchScoreBadge score={consultant.matchScore} />
+                                      {hasManySkills ? (
+                                        <div>
+                                          <div className="flex items-center justify-between mb-2">
+                                            <h3 className="text-sm font-medium text-muted-foreground">Skills</h3>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => toggleSkillsExpanded(consultantId)}
+                                              className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
+                                            >
+                                              {isSkillsExpanded ? (
+                                                <>
+                                                  <ChevronUp className="h-3 w-3 mr-1" />
+                                                  Show less
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <ChevronDown className="h-3 w-3 mr-1" />
+                                                  Show all ({consultant.skills.length})
+                                                </>
+                                              )}
+                                            </Button>
+                                          </div>
+                                          <SkillTags skills={visibleSkills} />
+                                        </div>
+                                      ) : (
+                                        <div>
+                                          <h3 className="text-sm font-medium mb-2 text-muted-foreground">Skills</h3>
+                                          <SkillTags skills={consultant.skills} />
+                                        </div>
                                       )}
                                     </div>
-                                  </div>
-                                  <CardDescription className="mt-2">
-                                    <AvailabilityBadge availability={consultant.availability} variant="text" />
-                                    {consultant.experience && (
-                                      <span className="block mt-2 text-muted-foreground text-sm font-medium">
-                                        {consultant.experience}
-                                      </span>
-                                    )}
-                                  </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                  <div className="space-y-3">
-                                    <div>
-                                      <h3 className="text-sm font-medium mb-2 text-muted-foreground">Skills</h3>
-                                      <SkillTags skills={consultant.skills} />
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            ))}
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
                           </div>
                         </>
                       )}
@@ -287,48 +439,108 @@ export function ConsultantResultsPage() {
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {consultants.map((consultant, index) => (
-                      <Card key={consultant.id || `consultant-${index}`} className="transition-shadow hover:shadow-md">
-                        <CardHeader>
-                          <div className="flex items-start justify-between">
-                            <CardTitle className="text-xl font-semibold">{consultant.name}</CardTitle>
-                            <div className="flex items-center gap-2">
-                              {consultant.resumeId && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => handleDownloadResume(consultant.resumeId!, consultant.name)}
-                                  title="Download resume PDF"
-                                  aria-label="Download resume PDF"
-                                >
-                                  <FileText className="h-4 w-4 text-primary" />
-                                </Button>
+                    {consultants.map((consultant, index) => {
+                      const consultantId = consultant.id || `consultant-${index}`;
+                      const isDescriptionExpanded = expandedDescriptions.has(consultantId);
+                      const isSkillsExpanded = expandedSkills.has(consultantId);
+                      const hasManySkills = consultant.skills.length > 6;
+                      const visibleSkills = hasManySkills && !isSkillsExpanded ? consultant.skills.slice(0, 6) : consultant.skills;
+                      const experience = consultant.experience || "";
+                      const hasLongExperience = experience.length > 150;
+                      const truncatedExperience = hasLongExperience && !isDescriptionExpanded ? truncateAtSentence(experience) : experience;
+                      
+                      return (
+                        <Card key={consultantId} className="transition-shadow hover:shadow-md">
+                          <CardHeader>
+                            <div className="flex items-start justify-between">
+                              <CardTitle className="text-xl font-semibold">{consultant.name}</CardTitle>
+                              <div className="flex items-center gap-2">
+                                {consultant.resumeId && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => handleDownloadResume(consultant.resumeId!, consultant.name)}
+                                    title="Download resume PDF"
+                                    aria-label="Download resume PDF"
+                                  >
+                                    <FileText className="h-4 w-4 text-primary" />
+                                  </Button>
+                                )}
+                                {consultant.matchScore !== undefined && (
+                                  <MatchScoreBadge score={consultant.matchScore} />
+                                )}
+                              </div>
+                            </div>
+                            <CardDescription>
+                              <AvailabilityBadge availability={consultant.availability} variant="text" />
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-3">
+                              {experience && (
+                                <div>
+                                  <p className="text-sm text-muted-foreground leading-relaxed">
+                                    {truncatedExperience}
+                                  </p>
+                                  {hasLongExperience && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => toggleDescriptionExpanded(consultantId)}
+                                      className="mt-1 h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
+                                    >
+                                      {isDescriptionExpanded ? (
+                                        <>
+                                          <ChevronUp className="h-3 w-3 mr-1" />
+                                          Show less
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ChevronDown className="h-3 w-3 mr-1" />
+                                          Show more
+                                        </>
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
                               )}
-                              {consultant.matchScore !== undefined && (
-                                <MatchScoreBadge score={consultant.matchScore} />
+                              {hasManySkills ? (
+                                <div>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h3 className="text-sm font-medium text-muted-foreground">Skills</h3>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => toggleSkillsExpanded(consultantId)}
+                                      className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
+                                    >
+                                      {isSkillsExpanded ? (
+                                        <>
+                                          <ChevronUp className="h-3 w-3 mr-1" />
+                                          Show less
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ChevronDown className="h-3 w-3 mr-1" />
+                                          Show all ({consultant.skills.length})
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
+                                  <SkillTags skills={visibleSkills} />
+                                </div>
+                              ) : (
+                                <div>
+                                  <h3 className="text-sm font-medium mb-2 text-muted-foreground">Skills</h3>
+                                  <SkillTags skills={consultant.skills} />
+                                </div>
                               )}
                             </div>
-                          </div>
-                          <CardDescription>
-                            <AvailabilityBadge availability={consultant.availability} variant="text" />
-                            {consultant.experience && (
-                              <span className="block mt-1 text-muted-foreground">
-                                {consultant.experience}
-                              </span>
-                            )}
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3">
-                            <div>
-                              <h3 className="text-sm font-medium mb-2">Skills</h3>
-                              <SkillTags skills={consultant.skills} />
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
                 </>
               )

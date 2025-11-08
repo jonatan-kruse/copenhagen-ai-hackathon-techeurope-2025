@@ -95,7 +95,7 @@ async def match_consultants(project: ProjectDescription):
                 "distance": MAX_DISTANCE
             })
             .with_additional(["id", "distance"])
-            .with_limit(20)
+            .with_limit(3)  # Only return top 3 matches
             .do()
         )
         
@@ -516,7 +516,7 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
                     "distance": MAX_DISTANCE
                 })
                 .with_additional(["id", "distance"])
-                .with_limit(10)  # Limit per role
+                .with_limit(3)  # Only return top 3 matches per role
                 .do()
             )
             
