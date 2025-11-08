@@ -1,7 +1,12 @@
 projmatch.vibeoholic.com {
     # Reverse proxy to frontend
     handle / {
-        reverse_proxy frontend:80
+        reverse_proxy frontend:80 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
 
     # Reverse proxy to backend API
