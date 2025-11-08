@@ -40,6 +40,19 @@ except Exception as e:
 upload_dir = os.getenv("UPLOAD_DIR", "uploads/resumes")
 storage = LocalFileStorage(base_dir=upload_dir)
 
+# Helper function to check if Consultant schema exists
+def schema_exists():
+    """Check if the Consultant schema exists in Weaviate."""
+    if not client:
+        return False
+    try:
+        schema = client.schema.get()
+        class_names = [c["class"] for c in schema.get("classes", [])]
+        return "Consultant" in class_names
+    except Exception as e:
+        print(f"Error checking schema: {e}")
+        return False
+
 # Pydantic models
 class Consultant(ConsultantData):
     id: Optional[str] = None
@@ -78,7 +91,13 @@ async def match_consultants(project: ProjectDescription):
     Match consultants based on project description using Weaviate vector search.
     """
     if not client:
-        return ConsultantResponse(consultants=[])
+        raise HTTPException(status_code=503, detail="Weaviate client not available")
+    
+    if not schema_exists():
+        raise HTTPException(
+            status_code=422,
+            detail="No consultants found in database. Please upload consultant resumes first."
+        )
     
     try:
         # Use Weaviate's pure vector search (semantic similarity)
@@ -149,11 +168,20 @@ async def match_consultants(project: ProjectDescription):
         
         return ConsultantResponse(consultants=consultants)
     
+    except HTTPException:
+        raise
     except Exception as e:
+        error_msg = str(e)
+        # Check if it's a schema-related error
+        if "no graphql provider" in error_msg.lower() or "no schema" in error_msg.lower():
+            raise HTTPException(
+                status_code=422,
+                detail="No consultants found in database. Please upload consultant resumes first."
+            )
         print(f"Error matching consultants: {e}")
         import traceback
         traceback.print_exc()
-        return ConsultantResponse(consultants=[])
+        raise HTTPException(status_code=500, detail=f"Error matching consultants: {error_msg}")
 
 @app.get("/api/consultants", response_model=ConsultantResponse)
 async def get_all_consultants():
@@ -161,6 +189,9 @@ async def get_all_consultants():
     Get all consultants.
     """
     if not client:
+        return ConsultantResponse(consultants=[])
+    
+    if not schema_exists():
         return ConsultantResponse(consultants=[])
     
     try:
@@ -359,6 +390,9 @@ async def get_overview():
     if not client:
         return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
     
+    if not schema_exists():
+        return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
+    
     try:
         # Fetch all consultants to count and collect skills
         response = (
@@ -498,7 +532,13 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
     Performs a separate vector search for each role query.
     """
     if not client:
-        return RoleMatchResponse(roles=[])
+        raise HTTPException(status_code=503, detail="Weaviate client not available")
+    
+    if not schema_exists():
+        raise HTTPException(
+            status_code=422,
+            detail="No consultants found in database. Please upload consultant resumes first."
+        )
     
     try:
         role_results = []
@@ -573,11 +613,20 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
         
         return RoleMatchResponse(roles=role_results)
     
+    except HTTPException:
+        raise
     except Exception as e:
+        error_msg = str(e)
+        # Check if it's a schema-related error
+        if "no graphql provider" in error_msg.lower() or "no schema" in error_msg.lower():
+            raise HTTPException(
+                status_code=422,
+                detail="No consultants found in database. Please upload consultant resumes first."
+            )
         print(f"Error matching consultants by roles: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error matching consultants: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error matching consultants: {error_msg}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -158,7 +158,8 @@ export async function matchConsultantsByRoles(roles: RoleQuery[]): Promise<RoleM
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `Failed to match consultants: ${response.statusText}`);
+    const errorMessage = error.detail || error.error || `Failed to match consultants: ${response.statusText}`;
+    throw new Error(errorMessage);
   }
   
   return await response.json();

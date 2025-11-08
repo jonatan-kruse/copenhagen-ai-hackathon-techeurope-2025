@@ -66,14 +66,26 @@ export function ConsultantResultsPage() {
           });
 
           if (!response.ok) {
-            throw new Error(`Failed to fetch consultants: ${response.statusText}`);
+            const error = await response.json().catch(() => ({ detail: response.statusText }));
+            const errorMessage = error.detail || error.error || `Failed to fetch consultants: ${response.statusText}`;
+            throw new Error(errorMessage);
           }
 
           const data = await response.json();
           setConsultants(data.consultants || []);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch consultants");
+        let errorMessage = "Failed to fetch consultants";
+        if (err instanceof Error) {
+          errorMessage = err.message;
+          // Check if it's a "no consultants" error
+          if (err.message.includes("No consultants found") || 
+              err.message.includes("no schema") ||
+              err.message.includes("no graphql provider")) {
+            errorMessage = "No consultants found in database. Please upload consultant resumes first.";
+          }
+        }
+        setError(errorMessage);
         console.error("Error fetching consultants:", err);
       } finally {
         setLoading(false);
@@ -210,16 +222,41 @@ export function ConsultantResultsPage() {
             ) : error ? (
               <Card className="border border-destructive/50">
                 <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-4">
-                    <AlertCircle className="h-5 w-5 text-destructive" />
-                    <p className="text-destructive font-semibold">Error: {error}</p>
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0">
+                        <svg
+                          className="h-5 w-5 text-destructive"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                          />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-destructive font-medium mb-2">Error matching consultants</p>
+                        <p className="text-muted-foreground">{error}</p>
+                        {error.includes("No consultants found") && (
+                          <p className="text-sm text-muted-foreground mt-3">
+                            Visit the Admin page to upload consultant resumes.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => window.location.reload()}
+                      variant="outline"
+                      className="mt-4"
+                    >
+                      Retry
+                    </Button>
                   </div>
-                  <Button
-                    onClick={() => window.location.reload()}
-                    variant="outline"
-                  >
-                    Retry
-                  </Button>
                 </CardContent>
               </Card>
             ) : isRoleBased ? (
