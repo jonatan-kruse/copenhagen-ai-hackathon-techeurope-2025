@@ -10,8 +10,6 @@ on:
     types: [closed]
 
 env:
-  FRONTEND_IMAGE_NAME: projmatch-frontend
-  BACKEND_IMAGE_NAME: projmatch-backend
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -53,20 +51,20 @@ jobs:
       - name: Test Docker builds
         run: |
           # Test frontend Docker build
-          docker build -t ${FRONTEND_IMAGE_NAME}:test -f frontend/Dockerfile ./frontend
-          docker run --rm -d -p 8080:80 --name test-frontend ${FRONTEND_IMAGE_NAME}:test
+          docker build -t projmatch-frontend:test -f frontend/Dockerfile ./frontend
+          docker run --rm -d -p 8080:80 --name test-frontend projmatch-frontend:test
           sleep 3
           curl -f http://localhost:8080 || exit 1
           docker stop test-frontend
-          docker rmi ${FRONTEND_IMAGE_NAME}:test
+          docker rmi projmatch-frontend:test
           
           # Test backend Docker build
-          docker build -t ${BACKEND_IMAGE_NAME}:test -f backend/Dockerfile ./backend
-          docker run --rm -d -p 8001:8000 --name test-backend ${BACKEND_IMAGE_NAME}:test
+          docker build -t projmatch-backend:test -f backend/Dockerfile ./backend
+          docker run --rm -d -p 8001:8000 --name test-backend projmatch-backend:test
           sleep 3
           curl -f http://localhost:8001/health || exit 1
           docker stop test-backend
-          docker rmi ${BACKEND_IMAGE_NAME}:test
+          docker rmi projmatch-backend:test
 
   # Build job - Only runs if test job passes
   build:
@@ -87,7 +85,7 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: false
-          tags: ${{ env.FRONTEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          tags: projmatch-frontend:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           load: true
@@ -98,15 +96,15 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: false
-          tags: ${{ env.BACKEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          tags: projmatch-backend:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           load: true
 
       - name: Save Docker images as artifacts
         run: |
-          docker save ${FRONTEND_IMAGE_NAME}:${IMAGE_TAG} | gzip > frontend-image.tar.gz
-          docker save ${BACKEND_IMAGE_NAME}:${IMAGE_TAG} | gzip > backend-image.tar.gz
+          docker save projmatch-frontend:${{ env.IMAGE_TAG }} | gzip > frontend-image.tar.gz
+          docker save projmatch-backend:${{ env.IMAGE_TAG }} | gzip > backend-image.tar.gz
           ls -lh *.tar.gz
 
       - name: Upload Docker image artifacts
@@ -162,67 +160,98 @@ jobs:
           scp docker-compose.prod.yml ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/docker-compose.prod.yml
           scp Caddyfile ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/Caddyfile
 
-      - name: Deploy on remote VM
+      - name: Load Docker images on remote VM
         run: |
-          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} bash << REMOTE_SCRIPT
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
             set -e
-            
-            FRONTEND_IMAGE="${{ env.FRONTEND_IMAGE_NAME }}"
-            BACKEND_IMAGE="${{ env.BACKEND_IMAGE_NAME }}"
-            IMAGE_TAG="${{ env.IMAGE_TAG }}"
-            
             echo "Loading Docker images..."
-            FRONTEND_LOADED=\$(docker load -i /tmp/frontend-image.tar.gz | grep "Loaded image" | awk '{print \$3}' | head -1)
-            BACKEND_LOADED=\$(docker load -i /tmp/backend-image.tar.gz | grep "Loaded image" | awk '{print \$3}' | head -1)
-            
-            echo "Frontend image loaded as: \$FRONTEND_LOADED"
-            echo "Backend image loaded as: \$BACKEND_LOADED"
-            
+            FRONTEND_LOADED=$(docker load -i /tmp/frontend-image.tar.gz | grep "Loaded image" | awk '{print $3}' | head -1)
+            BACKEND_LOADED=$(docker load -i /tmp/backend-image.tar.gz | grep "Loaded image" | awk '{print $3}' | head -1)
+            echo "Frontend image loaded as: $FRONTEND_LOADED"
+            echo "Backend image loaded as: $BACKEND_LOADED"
+            echo "FRONTEND_LOADED=$FRONTEND_LOADED" > /tmp/docker_images.env
+            echo "BACKEND_LOADED=$BACKEND_LOADED" >> /tmp/docker_images.env
+          EOF
+
+      - name: Tag Docker images as latest
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
+            source /tmp/docker_images.env
             echo "Tagging images as latest..."
-            docker tag "\$FRONTEND_LOADED" \${FRONTEND_IMAGE}:latest
-            docker tag "\$BACKEND_LOADED" \${BACKEND_IMAGE}:latest
-            
-            echo "Setting up deployment directory..."
-            DEPLOY_DIR=~/projmatch
-            mkdir -p ${DEPLOY_DIR}
-            
-            echo "Moving docker-compose.prod.yml and Caddyfile to deployment directory..."
-            mv /tmp/docker-compose.prod.yml ${DEPLOY_DIR}/docker-compose.prod.yml
-            mv /tmp/Caddyfile ${DEPLOY_DIR}/Caddyfile
-            
-            echo "Changing to deployment directory..."
-            cd ${DEPLOY_DIR}
-            
+            docker tag "$FRONTEND_LOADED" projmatch-frontend:latest
+            docker tag "$BACKEND_LOADED" projmatch-backend:latest
+            echo "Images tagged successfully"
+          EOF
+
+      - name: Setup deployment files
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
+            echo "Setting up deployment files..."
+            sudo mkdir -p /opt/projmatch
+            sudo mv /tmp/docker-compose.prod.yml /opt/projmatch/docker-compose.prod.yml
+            sudo mv /tmp/Caddyfile /opt/projmatch/Caddyfile
+            sudo chown -R $USER:$USER /opt/projmatch
+            echo "Deployment files ready"
+          EOF
+
+      - name: Stop old containers
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
             echo "Stopping old containers..."
+            cd /opt/projmatch
             docker compose -f docker-compose.prod.yml down || true
-            
+            echo "Old containers stopped"
+          EOF
+
+      - name: Start new containers
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
             echo "Starting new containers..."
+            cd /opt/projmatch
             docker compose -f docker-compose.prod.yml up -d
-            
+            echo "Containers started"
+          EOF
+
+      - name: Wait for containers to be healthy
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
             echo "Waiting for containers to be healthy..."
             sleep 10
-            
+            cd /opt/projmatch
+            docker compose -f docker-compose.prod.yml ps
+          EOF
+
+      - name: Cleanup and verify deployment
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
             echo "Cleaning up old images..."
             docker image prune -f
             
             echo "Removing temporary files..."
-            rm -f /tmp/frontend-image.tar.gz /tmp/backend-image.tar.gz
+            rm -f /tmp/frontend-image.tar.gz /tmp/backend-image.tar.gz /tmp/docker_images.env
             
             echo "Deployment complete!"
             echo ""
             echo "Container status:"
+            cd /opt/projmatch
             docker compose -f docker-compose.prod.yml ps
             echo ""
             echo "Recent logs:"
             docker compose -f docker-compose.prod.yml logs --tail=20
-          REMOTE_SCRIPT
+          EOF
 
       - name: Deployment Summary
         run: |
           echo "## 🚀 Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Frontend Image**: ${{ env.FRONTEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Backend Image**: ${{ env.BACKEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Image**: projmatch-frontend:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Image**: projmatch-backend:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **VM**: ${{ secrets.VM_HOST }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: Deployed and running" >> $GITHUB_STEP_SUMMARY
