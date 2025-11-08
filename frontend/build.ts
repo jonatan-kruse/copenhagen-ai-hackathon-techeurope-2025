@@ -140,6 +140,9 @@ const entrypoints = [...new Bun.Glob("**.html").scanSync("src")]
   .filter(dir => !dir.includes("node_modules"));
 console.log(`📄 Found ${entrypoints.length} HTML ${entrypoints.length === 1 ? "file" : "files"} to process\n`);
 
+// Get API base URL from environment
+const apiBaseUrl = process.env.VITE_API_BASE_URL || "/api";
+
 // Build all the HTML files
 const result = await build({
   entrypoints,
@@ -150,6 +153,7 @@ const result = await build({
   sourcemap: "linked",
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
+    "import.meta.env.VITE_API_BASE_URL": JSON.stringify(apiBaseUrl),
   },
   ...cliConfig, // Merge in any CLI-provided options
 });

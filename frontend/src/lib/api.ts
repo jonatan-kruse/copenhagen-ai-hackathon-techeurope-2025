@@ -1,9 +1,36 @@
 import { Consultant } from "@/types/consultant";
 
-const API_BASE_URL = "http://localhost:8000";
+// Use environment variable or default to relative URL for production
+// In development, this can be set to http://localhost:8000
+// Bun uses import.meta.env differently, so we need to safely access it
+// Try multiple ways to access the environment variable
+function getApiBaseUrl(): string {
+  // Try import.meta.env (Vite-style)
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  // Try window global (if set during build)
+  if (typeof window !== "undefined" && (window as any).__API_BASE_URL__) {
+    return (window as any).__API_BASE_URL__;
+  }
+  // Default to relative URL for production
+  return "/api";
+}
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Helper function to build API URLs
+// If API_BASE_URL is "/api", it's already the base path, so just append the endpoint
+// If API_BASE_URL is "http://localhost:8000", append "/api" + endpoint
+export function buildApiUrl(endpoint: string): string {
+  if (API_BASE_URL === "/api" || API_BASE_URL.startsWith("/")) {
+    return `${API_BASE_URL}${endpoint}`;
+  }
+  return `${API_BASE_URL}/api${endpoint}`;
+}
 
 export async function getAllConsultants(): Promise<Consultant[]> {
-  const response = await fetch(`${API_BASE_URL}/api/consultants`);
+  const response = await fetch(buildApiUrl("/consultants"));
   if (!response.ok) {
     throw new Error(`Failed to fetch consultants: ${response.statusText}`);
   }
@@ -12,7 +39,7 @@ export async function getAllConsultants(): Promise<Consultant[]> {
 }
 
 export async function deleteConsultant(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
-  const response = await fetch(`${API_BASE_URL}/api/consultants/${id}`, {
+  const response = await fetch(buildApiUrl(`/consultants/${id}`), {
     method: "DELETE",
   });
   if (!response.ok) {
@@ -22,7 +49,7 @@ export async function deleteConsultant(id: string): Promise<{ success: boolean; 
 }
 
 export async function deleteConsultantsBatch(ids: string[]): Promise<{ success: boolean; message?: string; deleted_count?: number; errors?: Array<{ id: string; error: string }>; error?: string }> {
-  const response = await fetch(`${API_BASE_URL}/api/consultants`, {
+  const response = await fetch(buildApiUrl("/consultants"), {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
@@ -39,7 +66,7 @@ export async function uploadResume(file: File): Promise<{ id: string; name: stri
   const formData = new FormData();
   formData.append("file", file);
   
-  const response = await fetch(`${API_BASE_URL}/api/resumes/upload`, {
+  const response = await fetch(buildApiUrl("/resumes/upload"), {
     method: "POST",
     body: formData,
   });
@@ -53,7 +80,7 @@ export async function uploadResume(file: File): Promise<{ id: string; name: stri
 }
 
 export function getResumeDownloadUrl(resumeId: string): string {
-  return `${API_BASE_URL}/api/resumes/${resumeId}/pdf`;
+  return buildApiUrl(`/resumes/${resumeId}/pdf`);
 }
 
 export interface SkillCount {
@@ -68,7 +95,7 @@ export interface OverviewData {
 }
 
 export async function getOverview(): Promise<OverviewData> {
-  const response = await fetch(`${API_BASE_URL}/api/overview`);
+  const response = await fetch(buildApiUrl("/overview"));
   if (!response.ok) {
     throw new Error(`Failed to fetch overview: ${response.statusText}`);
   }

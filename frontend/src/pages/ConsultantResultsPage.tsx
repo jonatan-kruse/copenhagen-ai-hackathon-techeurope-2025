@@ -3,10 +3,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Consultant } from "@/types/consultant";
-import { getResumeDownloadUrl } from "@/lib/api";
+import { getResumeDownloadUrl, buildApiUrl } from "@/lib/api";
 import { ArrowLeft, Loader2, FileText } from "lucide-react";
-
-const API_BASE_URL = "http://localhost:8000";
 
 function getAvailabilityColor(availability: Consultant["availability"]) {
   switch (availability) {
@@ -65,7 +63,7 @@ export function ConsultantResultsPage() {
       setError(null);
       
       try {
-        const response = await fetch(`${API_BASE_URL}/api/consultants/match`, {
+        const response = await fetch(buildApiUrl("/consultants/match"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

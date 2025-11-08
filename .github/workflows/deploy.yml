@@ -1,0 +1,225 @@
+name: Deploy to Remote VM
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types: [closed]
+
+env:
+  FRONTEND_IMAGE_NAME: projmatch-frontend
+  BACKEND_IMAGE_NAME: projmatch-backend
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  # Test job - MUST pass before build/deploy can run
+  # If any test fails, the entire pipeline stops
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: bun install
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: bun run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Test Docker builds
+        run: |
+          # Test frontend Docker build
+          docker build -t ${FRONTEND_IMAGE_NAME}:test -f frontend/Dockerfile ./frontend
+          docker run --rm -d -p 8080:80 --name test-frontend ${FRONTEND_IMAGE_NAME}:test
+          sleep 3
+          curl -f http://localhost:8080 || exit 1
+          docker stop test-frontend
+          docker rmi ${FRONTEND_IMAGE_NAME}:test
+          
+          # Test backend Docker build
+          docker build -t ${BACKEND_IMAGE_NAME}:test -f backend/Dockerfile ./backend
+          docker run --rm -d -p 8001:8000 --name test-backend ${BACKEND_IMAGE_NAME}:test
+          sleep 3
+          curl -f http://localhost:8001/health || exit 1
+          docker stop test-backend
+          docker rmi ${BACKEND_IMAGE_NAME}:test
+
+  # Build job - Only runs if test job passes
+  build:
+    name: Build Docker Images
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          tags: ${{ env.FRONTEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: ${{ env.BACKEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Save Docker images as artifacts
+        run: |
+          docker save ${FRONTEND_IMAGE_NAME}:${IMAGE_TAG} | gzip > frontend-image.tar.gz
+          docker save ${BACKEND_IMAGE_NAME}:${IMAGE_TAG} | gzip > backend-image.tar.gz
+          ls -lh *.tar.gz
+
+      - name: Upload Docker image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: |
+            frontend-image.tar.gz
+            backend-image.tar.gz
+          retention-days: 1
+
+  # Deploy job - Only runs if both test AND build jobs pass
+  # This ensures deployment never happens if tests fail
+  # Only runs in the "Prod" environment where secrets are available
+  deploy:
+    name: Deploy to Remote VM
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    environment: Prod
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.action == 'closed')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: ./
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Copy Docker images to remote VM
+        run: |
+          echo "Transferring Docker images to remote VM..."
+          scp frontend-image.tar.gz ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/frontend-image.tar.gz
+          scp backend-image.tar.gz ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/backend-image.tar.gz
+
+      - name: Copy docker-compose.prod.yml and Caddyfile to remote VM
+        run: |
+          scp docker-compose.prod.yml ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/docker-compose.prod.yml
+          scp Caddyfile ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/tmp/Caddyfile
+
+      - name: Deploy on remote VM
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} bash << REMOTE_SCRIPT
+            set -e
+            
+            FRONTEND_IMAGE="${{ env.FRONTEND_IMAGE_NAME }}"
+            BACKEND_IMAGE="${{ env.BACKEND_IMAGE_NAME }}"
+            IMAGE_TAG="${{ env.IMAGE_TAG }}"
+            
+            echo "Loading Docker images..."
+            docker load -i /tmp/frontend-image.tar.gz
+            docker load -i /tmp/backend-image.tar.gz
+            
+            echo "Tagging images as latest..."
+            docker tag ${FRONTEND_IMAGE}:${IMAGE_TAG} ${FRONTEND_IMAGE}:latest
+            docker tag ${BACKEND_IMAGE}:${IMAGE_TAG} ${BACKEND_IMAGE}:latest
+            
+            echo "Setting up deployment directory..."
+            DEPLOY_DIR=~/projmatch
+            mkdir -p ${DEPLOY_DIR}
+            
+            echo "Moving docker-compose.prod.yml and Caddyfile to deployment directory..."
+            mv /tmp/docker-compose.prod.yml ${DEPLOY_DIR}/docker-compose.prod.yml
+            mv /tmp/Caddyfile ${DEPLOY_DIR}/Caddyfile
+            
+            echo "Changing to deployment directory..."
+            cd ${DEPLOY_DIR}
+            
+            echo "Stopping old containers..."
+            docker compose -f docker-compose.prod.yml down || true
+            
+            echo "Starting new containers..."
+            docker compose -f docker-compose.prod.yml up -d
+            
+            echo "Waiting for containers to be healthy..."
+            sleep 10
+            
+            echo "Cleaning up old images..."
+            docker image prune -f
+            
+            echo "Removing temporary files..."
+            rm -f /tmp/frontend-image.tar.gz /tmp/backend-image.tar.gz
+            
+            echo "Deployment complete!"
+            echo ""
+            echo "Container status:"
+            docker compose -f docker-compose.prod.yml ps
+            echo ""
+            echo "Recent logs:"
+            docker compose -f docker-compose.prod.yml logs --tail=20
+          REMOTE_SCRIPT
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Image**: ${{ env.FRONTEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Image**: ${{ env.BACKEND_IMAGE_NAME }}:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **VM**: ${{ secrets.VM_HOST }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: Deployed and running" >> $GITHUB_STEP_SUMMARY
+

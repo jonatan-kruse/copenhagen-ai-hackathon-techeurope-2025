@@ -16,9 +16,11 @@ load_dotenv()
 app = FastAPI(title="Consultant Matching API", version="1.0.0")
 
 # CORS middleware
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://localhost:8080")
+cors_origins_list = [origin.strip() for origin in cors_origins.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:8080"],
+    allow_origins=cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
