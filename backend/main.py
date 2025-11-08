@@ -574,23 +574,34 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
             # Perform vector search for this role
             # Use certainty (0-1) instead of distance for better score differentiation
             # Certainty represents similarity: 1.0 = identical, 0.0 = completely different
-            MIN_CERTAINTY = 0.5  # Minimum certainty threshold to filter poor matches
+            # Lower threshold to get more results - we'll filter by score later if needed
+            MIN_CERTAINTY = 0.3  # Lower threshold to get more matches
             
-            response = (
-                client.query
-                .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
-                .with_near_text({
-                    "concepts": [role_query.query],
-                    "certainty": MIN_CERTAINTY
-                })
-                .with_additional(["id", "certainty"])
-                .with_limit(3)  # Only return top 3 matches per role
-                .do()
-            )
+            print(f"Searching for role '{role_query.title}' with query: '{role_query.query}'")
+            
+            try:
+                response = (
+                    client.query
+                    .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
+                    .with_near_text({
+                        "concepts": [role_query.query],
+                        "certainty": MIN_CERTAINTY
+                    })
+                    .with_additional(["id", "certainty"])
+                    .with_limit(10)  # Get more results, we'll filter later
+                    .do()
+                )
+                print(f"Weaviate response for '{role_query.title}': {response}")
+            except Exception as e:
+                print(f"Error querying Weaviate for role '{role_query.title}': {e}")
+                import traceback
+                traceback.print_exc()
+                response = {"data": {"Get": {}}}
             
             consultants = []
             if "data" in response and "Get" in response["data"] and "Consultant" in response["data"]["Get"]:
                 results = response["data"]["Get"]["Consultant"]
+                print(f"Found {len(results)} raw results for role '{role_query.title}'")
                 
                 # Collect all certainties for normalization
                 certainties = []
@@ -652,12 +663,24 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
                     
                     consultants.append(consultant_data)
             
-            role_results.append(RoleMatchResult(
+            # Ensure consultants is always a list, never None
+            if consultants is None:
+                consultants = []
+            
+            role_result = RoleMatchResult(
                 role=role_query,
                 consultants=consultants
-            ))
+            )
+            print(f"Role '{role_query.title}': Found {len(consultants)} consultants")
+            print(f"Role result consultants type: {type(role_result.consultants)}, length: {len(role_result.consultants) if role_result.consultants else 'None'}")
+            print(f"Role result consultants value: {role_result.consultants}")
+            role_results.append(role_result)
         
-        return RoleMatchResponse(roles=role_results)
+        response_data = RoleMatchResponse(roles=role_results)
+        print(f"Response has {len(response_data.roles)} roles")
+        for idx, role_result in enumerate(response_data.roles):
+            print(f"Response role {idx} '{role_result.role.title}': consultants type={type(role_result.consultants)}, length={len(role_result.consultants) if role_result.consultants else 'None'}")
+        return response_data
     
     except HTTPException:
         raise

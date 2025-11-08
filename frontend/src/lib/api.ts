@@ -30,26 +30,36 @@ export function buildApiUrl(endpoint: string): string {
 }
 
 export async function getAllConsultants(): Promise<Consultant[]> {
-  const response = await fetch(buildApiUrl("/consultants"));
+  const endpoint = "/consultants";
+  const url = buildApiUrl(endpoint);
+  const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to fetch consultants: ${response.statusText}`);
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    const errorMessage = error.detail || error.error || response.statusText;
+    throw new Error(`GET ${endpoint} (${response.status}): ${errorMessage}`);
   }
   const data = await response.json();
   return data.consultants || [];
 }
 
 export async function deleteConsultant(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
-  const response = await fetch(buildApiUrl(`/consultants/${id}`), {
+  const endpoint = `/consultants/${id}`;
+  const url = buildApiUrl(endpoint);
+  const response = await fetch(url, {
     method: "DELETE",
   });
   if (!response.ok) {
-    throw new Error(`Failed to delete consultant: ${response.statusText}`);
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    const errorMessage = error.detail || error.error || response.statusText;
+    throw new Error(`DELETE ${endpoint} (${response.status}): ${errorMessage}`);
   }
   return await response.json();
 }
 
 export async function deleteConsultantsBatch(ids: string[]): Promise<{ success: boolean; message?: string; deleted_count?: number; errors?: Array<{ id: string; error: string }>; error?: string }> {
-  const response = await fetch(buildApiUrl("/consultants"), {
+  const endpoint = "/consultants";
+  const url = buildApiUrl(endpoint);
+  const response = await fetch(url, {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
@@ -57,23 +67,28 @@ export async function deleteConsultantsBatch(ids: string[]): Promise<{ success: 
     body: JSON.stringify({ ids }),
   });
   if (!response.ok) {
-    throw new Error(`Failed to delete consultants: ${response.statusText}`);
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    const errorMessage = error.detail || error.error || response.statusText;
+    throw new Error(`DELETE ${endpoint} (${response.status}): ${errorMessage}`);
   }
   return await response.json();
 }
 
 export async function uploadResume(file: File): Promise<{ id: string; name: string; skills: string[]; experience: string; education: string; email: string; phone: string; full_text: string }> {
+  const endpoint = "/resumes/upload";
+  const url = buildApiUrl(endpoint);
   const formData = new FormData();
   formData.append("file", file);
   
-  const response = await fetch(buildApiUrl("/resumes/upload"), {
+  const response = await fetch(url, {
     method: "POST",
     body: formData,
   });
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `Failed to upload resume: ${response.statusText}`);
+    const errorMessage = error.detail || error.error || response.statusText;
+    throw new Error(`POST ${endpoint} (${response.status}): ${errorMessage}`);
   }
   
   return await response.json();
@@ -95,9 +110,13 @@ export interface OverviewData {
 }
 
 export async function getOverview(): Promise<OverviewData> {
-  const response = await fetch(buildApiUrl("/overview"));
+  const endpoint = "/overview";
+  const url = buildApiUrl(endpoint);
+  const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to fetch overview: ${response.statusText}`);
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    const errorMessage = error.detail || error.error || response.statusText;
+    throw new Error(`GET ${endpoint} (${response.status}): ${errorMessage}`);
   }
   return await response.json();
 }
@@ -122,7 +141,9 @@ export interface ChatResponse {
 }
 
 export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatResponse> {
-  const response = await fetch(buildApiUrl("/chat"), {
+  const endpoint = "/chat";
+  const url = buildApiUrl(endpoint);
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -132,7 +153,8 @@ export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatResp
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `Failed to send chat message: ${response.statusText}`);
+    const errorMessage = error.detail || error.error || response.statusText;
+    throw new Error(`POST ${endpoint} (${response.status}): ${errorMessage}`);
   }
   
   return await response.json();
@@ -148,7 +170,9 @@ export interface RoleMatchResponse {
 }
 
 export async function matchConsultantsByRoles(roles: RoleQuery[]): Promise<RoleMatchResponse> {
-  const response = await fetch(buildApiUrl("/consultants/match-roles"), {
+  const endpoint = "/consultants/match-roles";
+  const url = buildApiUrl(endpoint);
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -158,10 +182,24 @@ export async function matchConsultantsByRoles(roles: RoleQuery[]): Promise<RoleM
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    const errorMessage = error.detail || error.error || `Failed to match consultants: ${response.statusText}`;
-    throw new Error(errorMessage);
+    const errorMessage = error.detail || error.error || response.statusText;
+    throw new Error(`POST ${endpoint} (${response.status}): ${errorMessage}`);
   }
   
-  return await response.json();
+  const data = await response.json();
+  console.log("Raw API response:", data);
+  console.log("Response roles:", data.roles);
+  if (data.roles) {
+    data.roles.forEach((roleResult: any, idx: number) => {
+      console.log(`API Role ${idx} (${roleResult.role?.title}):`, {
+        hasConsultants: !!roleResult.consultants,
+        consultantsType: typeof roleResult.consultants,
+        consultantsIsArray: Array.isArray(roleResult.consultants),
+        consultantsLength: roleResult.consultants?.length,
+        consultantsValue: roleResult.consultants
+      });
+    });
+  }
+  return data;
 }
 

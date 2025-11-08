@@ -51,7 +51,7 @@ class RoleMatchRequest(BaseModel):
 class RoleMatchResult(BaseModel):
     """Result for a single role match."""
     role: RoleQuery
-    consultants: List[dict]  # List of Consultant dictionaries
+    consultants: List[dict] = []  # List of Consultant dictionaries, default to empty list
 
 
 class RoleMatchResponse(BaseModel):

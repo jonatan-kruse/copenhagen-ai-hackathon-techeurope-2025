@@ -63,7 +63,7 @@ export function ChatInterface({ onComplete }: ChatInterfaceProps) {
       console.error("Error sending message:", error);
       const errorMessage: ChatMessage = {
         role: "assistant",
-        content: "Sorry, I encountered an error. Please try again."
+        content: `Error: ${error instanceof Error ? error.message : String(error)}`
       };
       setMessages([...newMessages, errorMessage]);
     } finally {

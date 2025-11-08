@@ -64,7 +64,9 @@ export function ConsultantResultsPage() {
         } else if (projectDescription) {
           // Legacy single query matching
           setIsRoleBased(false);
-          const response = await fetch(buildApiUrl("/consultants/match"), {
+          const endpoint = "/consultants/match";
+          const url = buildApiUrl(endpoint);
+          const response = await fetch(url, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -74,8 +76,8 @@ export function ConsultantResultsPage() {
 
           if (!response.ok) {
             const error = await response.json().catch(() => ({ detail: response.statusText }));
-            const errorMessage = error.detail || error.error || `Failed to fetch consultants: ${response.statusText}`;
-            throw new Error(errorMessage);
+            const errorMessage = error.detail || error.error || response.statusText;
+            throw new Error(`POST ${endpoint} (${response.status}): ${errorMessage}`);
           }
 
           const data = await response.json();
@@ -85,12 +87,8 @@ export function ConsultantResultsPage() {
         let errorMessage = "Failed to fetch consultants";
         if (err instanceof Error) {
           errorMessage = err.message;
-          // Check if it's a "no consultants" error
-          if (err.message.includes("No consultants found") || 
-              err.message.includes("no schema") ||
-              err.message.includes("no graphql provider")) {
-            errorMessage = "No consultants found in database. Please upload consultant resumes first.";
-          }
+        } else {
+          errorMessage = String(err);
         }
         setError(errorMessage);
         console.error("Error fetching consultants:", err);
