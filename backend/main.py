@@ -104,8 +104,9 @@ async def match_consultants(project: ProjectDescription):
         # .with_near_text() generates a vector from the query text and compares it to stored object vectors
         # Use certainty (0-1) instead of distance for better score differentiation
         # Certainty represents similarity: 1.0 = identical, 0.0 = completely different
-        MIN_CERTAINTY = 0.5  # Minimum certainty threshold to filter poor matches
+        MIN_CERTAINTY = 0.2  # Lower threshold to get more diverse results
         
+        # Fetch a large pool of candidates to score them all, then limit to top 3
         response = (
             client.query
             .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
@@ -114,7 +115,7 @@ async def match_consultants(project: ProjectDescription):
                 "certainty": MIN_CERTAINTY
             })
             .with_additional(["id", "certainty"])
-            .with_limit(3)  # Only return top 3 matches
+            .with_limit(100)  # Get large pool to score all candidates
             .do()
         )
         
@@ -122,7 +123,7 @@ async def match_consultants(project: ProjectDescription):
         if "data" in response and "Get" in response["data"] and "Consultant" in response["data"]["Get"]:
             results = response["data"]["Get"]["Consultant"]
             
-            # Collect all certainties for normalization
+            # Collect all certainties for normalization across all candidates
             certainties = []
             for consultant in results:
                 additional = consultant.get("_additional", {})
@@ -133,11 +134,12 @@ async def match_consultants(project: ProjectDescription):
                     except (ValueError, TypeError):
                         pass
             
-            # Normalize scores to use full 0-100% range
+            # Normalize scores to use full 0-100% range based on all candidates
             min_certainty = min(certainties) if certainties else 0.0
             max_certainty = max(certainties) if certainties else 1.0
             certainty_range = max_certainty - min_certainty if max_certainty > min_certainty else 1.0
             
+            # Calculate scores for ALL candidates first
             for consultant in results:
                 consultant_id = consultant.get("_additional", {}).get("id")
                 additional = consultant.get("_additional", {})
@@ -182,7 +184,8 @@ async def match_consultants(project: ProjectDescription):
                 
                 consultants.append(consultant_data)
             
-            # Results are already sorted by similarity from Weaviate
+            # Now limit to top 3 AFTER calculating scores for all candidates
+            consultants = sorted(consultants, key=lambda x: x["matchScore"], reverse=True)[:3]
         
         return ConsultantResponse(consultants=consultants)
     
@@ -574,36 +577,27 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
             # Perform vector search for this role
             # Use certainty (0-1) instead of distance for better score differentiation
             # Certainty represents similarity: 1.0 = identical, 0.0 = completely different
-            # Lower threshold to get more results - we'll filter by score later if needed
-            MIN_CERTAINTY = 0.3  # Lower threshold to get more matches
+            MIN_CERTAINTY = 0.2  # Lower threshold to get more diverse results
             
-            print(f"Searching for role '{role_query.title}' with query: '{role_query.query}'")
-            
-            try:
-                response = (
-                    client.query
-                    .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
-                    .with_near_text({
-                        "concepts": [role_query.query],
-                        "certainty": MIN_CERTAINTY
-                    })
-                    .with_additional(["id", "certainty"])
-                    .with_limit(10)  # Get more results, we'll filter later
-                    .do()
-                )
-                print(f"Weaviate response for '{role_query.title}': {response}")
-            except Exception as e:
-                print(f"Error querying Weaviate for role '{role_query.title}': {e}")
-                import traceback
-                traceback.print_exc()
-                response = {"data": {"Get": {}}}
+            # Fetch a large pool of candidates to score them all, then limit to top 3
+            response = (
+                client.query
+                .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
+                .with_near_text({
+                    "concepts": [role_query.query],
+                    "certainty": MIN_CERTAINTY
+                })
+                .with_additional(["id", "certainty"])
+                .with_limit(100)  # Get large pool to score all candidates
+                .do()
+            )
             
             consultants = []
             if "data" in response and "Get" in response["data"] and "Consultant" in response["data"]["Get"]:
                 results = response["data"]["Get"]["Consultant"]
                 print(f"Found {len(results)} raw results for role '{role_query.title}'")
                 
-                # Collect all certainties for normalization
+                # Collect all certainties for normalization across all candidates
                 certainties = []
                 for consultant in results:
                     additional = consultant.get("_additional", {})
@@ -614,11 +608,12 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
                         except (ValueError, TypeError):
                             pass
                 
-                # Normalize scores to use full 0-100% range
+                # Normalize scores to use full 0-100% range based on all candidates
                 min_certainty = min(certainties) if certainties else 0.0
                 max_certainty = max(certainties) if certainties else 1.0
                 certainty_range = max_certainty - min_certainty if max_certainty > min_certainty else 1.0
                 
+                # Calculate scores for ALL candidates first
                 for consultant in results:
                     consultant_id = consultant.get("_additional", {}).get("id")
                     additional = consultant.get("_additional", {})
@@ -663,11 +658,10 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
                     
                     consultants.append(consultant_data)
             
-            # Ensure consultants is always a list, never None
-            if consultants is None:
-                consultants = []
+            # Now limit to top 3 AFTER calculating scores for all candidates
+            consultants = sorted(consultants, key=lambda x: x["matchScore"], reverse=True)[:3]
             
-            role_result = RoleMatchResult(
+            role_results.append(RoleMatchResult(
                 role=role_query,
                 consultants=consultants
             )
