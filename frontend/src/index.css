@@ -5,8 +5,19 @@
     @apply font-sans;
   }
 
+  html {
+    @apply overflow-x-hidden;
+    height: 100%;
+  }
+
   body {
-    @apply min-w-[320px] min-h-screen m-0 bg-background text-foreground antialiased;
+    @apply min-w-[320px] m-0 bg-background text-foreground antialiased overflow-x-hidden;
+    min-height: 100%;
+    height: auto;
+  }
+
+  #root {
+    min-height: 100%;
   }
 }
 

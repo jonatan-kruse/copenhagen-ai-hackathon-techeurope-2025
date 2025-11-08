@@ -1,35 +1,12 @@
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Consultant } from "@/types/consultant";
+import { AvailabilityBadge } from "@/components/ui/AvailabilityBadge";
+import { SkillTags } from "@/components/ui/SkillTags";
+import type { Consultant } from "@/types/consultant";
 import { getAllConsultants, deleteConsultant, deleteConsultantsBatch, uploadResume, getResumeDownloadUrl } from "@/lib/api";
+import { PAGINATION, UI_CONSTANTS } from "@/lib/constants";
 import { Loader2, Trash2, MoreVertical, ChevronLeft, ChevronRight, Upload, CheckCircle2, XCircle, FileText } from "lucide-react";
-
-function getAvailabilityColor(availability: Consultant["availability"]) {
-  switch (availability) {
-    case "available":
-      return "text-green-600 dark:text-green-400";
-    case "busy":
-      return "text-yellow-600 dark:text-yellow-400";
-    case "unavailable":
-      return "text-red-600 dark:text-red-400";
-    default:
-      return "text-muted-foreground";
-  }
-}
-
-function getAvailabilityLabel(availability: Consultant["availability"]) {
-  switch (availability) {
-    case "available":
-      return "Available";
-    case "busy":
-      return "Busy";
-    case "unavailable":
-      return "Unavailable";
-    default:
-      return "Unknown";
-  }
-}
 
 export function AdminPage() {
   const [consultants, setConsultants] = useState<Consultant[]>([]);
@@ -40,7 +17,7 @@ export function AdminPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState<number>(PAGINATION.DEFAULT_PAGE_SIZE);
   
   // PDF upload state
   const [uploading, setUploading] = useState(false);
@@ -210,8 +187,8 @@ export function AdminPage() {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-      // Clear success message after 3 seconds
-      setTimeout(() => setUploadSuccess(false), 3000);
+      // Clear success message after timeout
+      setTimeout(() => setUploadSuccess(false), UI_CONSTANTS.UPLOAD_SUCCESS_TIMEOUT);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Failed to upload resume");
     } finally {
@@ -234,15 +211,18 @@ export function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
+    <div className="w-full bg-background overflow-x-hidden">
       <div className="container mx-auto px-4 py-8 md:py-16 max-w-6xl">
         <div className="space-y-6">
           {/* PDF Upload Card */}
-          <Card className="shadow-lg">
+          <Card className="shadow-md">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold">Upload Resume PDF</CardTitle>
+              <CardTitle className="text-2xl font-semibold flex items-center gap-2">
+                <Upload className="h-6 w-6" />
+                Upload Resume PDF
+              </CardTitle>
               <p className="text-muted-foreground text-sm mt-1">
-                Upload a PDF resume to add it to the consultant database
+                Upload a PDF resume to add it to the consultant database. Drag and drop or click to select.
               </p>
             </CardHeader>
             <CardContent>
@@ -255,7 +235,35 @@ export function AdminPage() {
                   className="hidden"
                   disabled={uploading}
                 />
-                <div className="flex items-center gap-4">
+                <div
+                  onClick={handleUploadClick}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.add("border-primary");
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.classList.remove("border-primary");
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove("border-primary");
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type === "application/pdf") {
+                      if (fileInputRef.current) {
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(file);
+                        fileInputRef.current.files = dataTransfer.files;
+                        handleFileSelect({ target: fileInputRef.current } as React.ChangeEvent<HTMLInputElement>);
+                      }
+                    }
+                  }}
+                  className="border border-dashed border-border/50 rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+                >
+                  <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm font-medium mb-1">Click to upload or drag and drop</p>
+                  <p className="text-xs text-muted-foreground">PDF files only</p>
+                </div>
+                <div className="flex items-center gap-4 flex-wrap">
                   <Button
                     onClick={handleUploadClick}
                     disabled={uploading}
@@ -274,15 +282,15 @@ export function AdminPage() {
                     )}
                   </Button>
                   {uploadSuccess && (
-                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                    <div className="flex items-center gap-2 text-green-600 animate-in fade-in slide-in-from-left-2">
                       <CheckCircle2 className="h-4 w-4" />
-                      <span className="text-sm">Resume uploaded successfully!</span>
+                      <span className="text-sm font-medium">Resume uploaded successfully!</span>
                     </div>
                   )}
                   {uploadError && (
-                    <div className="flex items-center gap-2 text-destructive">
+                    <div className="flex items-center gap-2 text-destructive animate-in fade-in slide-in-from-left-2">
                       <XCircle className="h-4 w-4" />
-                      <span className="text-sm">{uploadError}</span>
+                      <span className="text-sm font-medium">{uploadError}</span>
                     </div>
                   )}
                 </div>
@@ -291,11 +299,11 @@ export function AdminPage() {
           </Card>
 
           {/* Consultants List Card */}
-          <Card className="shadow-lg">
+          <Card className="shadow-md">
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-4">
                 <div>
-                  <CardTitle className="text-3xl md:text-4xl font-bold">
+                  <CardTitle className="text-3xl md:text-4xl font-semibold text-primary">
                     Database Overview
                   </CardTitle>
                   <p className="text-muted-foreground mt-2">
@@ -360,41 +368,44 @@ export function AdminPage() {
                       }}
                       className="rounded-md border border-input bg-background px-2 py-1 text-sm"
                     >
-                      <option value="10">10</option>
-                      <option value="25">25</option>
-                      <option value="50">50</option>
-                      <option value="100">100</option>
+                      {PAGINATION.PAGE_SIZE_OPTIONS.map((size) => (
+                        <option key={size} value={size}>
+                          {size}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border border-border/50 rounded-lg overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-muted/50">
+                      <thead className="bg-muted/50 border-b border-border/50">
                         <tr>
-                          <th className="px-3 py-0.5 text-left">
+                          <th className="px-3 py-3 text-left">
                             <input
                               type="checkbox"
                               checked={allVisibleSelected}
                               onChange={(e) => handleSelectAll(e.target.checked)}
-                              className="rounded border-input"
+                              className="rounded border-input cursor-pointer"
                             />
                           </th>
-                          <th className="px-3 py-1 text-left text-sm font-medium">Name</th>
-                          <th className="px-3 py-1 text-left text-sm font-medium">Skills</th>
-                          <th className="px-3 py-1 text-left text-sm font-medium">Availability</th>
-                          <th className="px-3 py-1 text-center text-sm font-medium">Resume</th>
-                          <th className="px-3 py-1 text-right text-sm font-medium">Actions</th>
+                          <th className="px-3 py-3 text-left text-sm font-medium">Name</th>
+                          <th className="px-3 py-3 text-left text-sm font-medium">Skills</th>
+                          <th className="px-3 py-3 text-left text-sm font-medium">Availability</th>
+                          <th className="px-3 py-3 text-center text-sm font-medium">Resume</th>
+                          <th className="px-3 py-3 text-right text-sm font-medium">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y">
-                        {paginatedConsultants.map((consultant) => {
+                      <tbody className="divide-y divide-border/50">
+                        {paginatedConsultants.map((consultant, index) => {
                           const hasId = !!consultant.id;
                           const isSelected = hasId && selectedIds.has(consultant.id!);
                           return (
                             <tr
                               key={consultant.id || `consultant-${consultant.name}`}
-                              className="hover:bg-muted/30 transition-colors"
+                              className={`hover:bg-muted/50 transition-colors ${
+                                index % 2 === 0 ? "bg-background" : "bg-muted/20"
+                              } ${isSelected ? "bg-primary/10" : ""}`}
                             >
                               <td className="px-3 py-0.5">
                                 <input
@@ -409,28 +420,12 @@ export function AdminPage() {
                                   className="rounded border-input disabled:opacity-50 disabled:cursor-not-allowed"
                                 />
                               </td>
-                              <td className="px-3 py-0.5 font-medium text-sm leading-tight">{consultant.name}</td>
+                              <td className="px-3 py-0.5 text-sm leading-tight">{consultant.name}</td>
                               <td className="px-3 py-0.5">
-                                <div className="flex flex-wrap gap-1">
-                                  {consultant.skills.slice(0, 3).map((skill, index) => (
-                                    <span
-                                      key={index}
-                                      className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary"
-                                    >
-                                      {skill}
-                                    </span>
-                                  ))}
-                                  {consultant.skills.length > 3 && (
-                                    <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-                                      +{consultant.skills.length - 3}
-                                    </span>
-                                  )}
-                                </div>
+                                <SkillTags skills={consultant.skills} maxVisible={3} size="sm" />
                               </td>
                               <td className="px-3 py-0.5">
-                                <span className={`text-sm leading-tight ${getAvailabilityColor(consultant.availability)}`}>
-                                  {getAvailabilityLabel(consultant.availability)}
-                                </span>
+                                <AvailabilityBadge availability={consultant.availability} variant="text" className="text-sm leading-tight" />
                               </td>
                               <td className="px-3 py-0.5 text-center">
                                 {consultant.resumeId ? (
@@ -448,7 +443,7 @@ export function AdminPage() {
                                   <span className="text-xs text-muted-foreground">—</span>
                                 )}
                               </td>
-                              <td className="px-3 py-0.5 text-right">
+                              <td className="px-3 py-2 text-right">
                                 <div className="relative inline-block" ref={(el) => {
                                   if (consultant.id) {
                                     menuRefs.current[consultant.id] = el;
@@ -469,11 +464,11 @@ export function AdminPage() {
                                     <MoreVertical className="h-4 w-4" />
                                   </Button>
                                   {hasId && openMenuId === consultant.id && (
-                                    <div className="absolute right-0 mt-1 w-32 bg-background border border-input rounded-md shadow-lg z-10">
+                                    <div className="absolute right-0 mt-1 w-32 bg-background border border-border/50 rounded-md shadow-lg z-10 animate-in fade-in slide-in-from-top-2">
                                       <button
                                         onClick={() => handleDeleteOne(consultant.id!)}
                                         disabled={deleting}
-                                        className="w-full text-left px-3 py-2 text-sm text-destructive hover:bg-destructive/10 rounded-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="w-full text-left px-3 py-2 text-sm text-destructive hover:bg-destructive/10 rounded-md flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                       >
                                         <Trash2 className="h-4 w-4" />
                                         Delete
@@ -490,7 +485,7 @@ export function AdminPage() {
                   </div>
                 </div>
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between pt-4">
+                  <div className="flex items-center justify-between pt-4 flex-wrap gap-4">
                     <div className="text-sm text-muted-foreground">
                       Page {currentPage} of {totalPages}
                     </div>

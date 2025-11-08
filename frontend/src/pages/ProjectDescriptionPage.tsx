@@ -32,13 +32,13 @@ export function ProjectDescriptionPage() {
   const maxCharacters = 5000;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 md:py-16 max-w-6xl">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-stretch">
           <div className="lg:col-span-2">
-            <Card className="shadow-lg h-full flex flex-col" style={{ backgroundColor: 'var(--card-primary)' }}>
+            <Card className="shadow-md h-full flex flex-col bg-card-primary">
               <CardHeader>
-                <CardTitle className="text-3xl md:text-4xl font-bold text-center">
+                <CardTitle className="text-3xl md:text-4xl font-semibold text-center">
                   Describe Your Project
                 </CardTitle>
                 <p className="text-muted-foreground text-center mt-2">
@@ -58,7 +58,7 @@ export function ProjectDescriptionPage() {
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Describe your project requirements, skills needed, timeline, and any other relevant details..."
-                    className="flex min-h-[300px] md:min-h-[400px] w-full rounded-md border border-input bg-background px-3 py-2 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/10 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm resize-y flex-1"
+                    className="flex min-h-[300px] md:min-h-[400px] w-full rounded-md border border-input/50 bg-background px-3 py-2 text-base shadow-sm transition-all file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm resize-y flex-1"
                     aria-label="Project description input"
                     maxLength={maxCharacters}
                     onKeyDown={(e) => {
@@ -73,7 +73,7 @@ export function ProjectDescriptionPage() {
                       {characterCount} / {maxCharacters} characters
                     </span>
                     {characterCount > maxCharacters * 0.9 && (
-                      <span className="text-yellow-600 dark:text-yellow-400">
+                      <span className="text-yellow-600">
                         Approaching limit
                       </span>
                     )}
@@ -94,7 +94,7 @@ export function ProjectDescriptionPage() {
             </Card>
           </div>
           <div className="lg:col-span-1">
-            <Card className="shadow-lg h-full flex flex-col" style={{ backgroundColor: 'var(--card-secondary)' }}>
+            <Card className="shadow-md h-full flex flex-col bg-card-secondary">
               <CardHeader>
                 <CardTitle className="text-xl">Overview</CardTitle>
               </CardHeader>

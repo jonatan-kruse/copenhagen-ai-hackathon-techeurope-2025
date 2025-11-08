@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageBubble } from "./MessageBubble";
 import { sendChatMessage, type ChatMessage } from "@/lib/api";
+import { UI_CONSTANTS } from "@/lib/constants";
 import { Loader2 } from "lucide-react";
 
 interface ChatInterfaceProps {
@@ -56,7 +57,7 @@ export function ChatInterface({ onComplete }: ChatInterfaceProps) {
         // Wait a bit before navigating to show the final message
         setTimeout(() => {
           onComplete(response.roles);
-        }, 1000);
+        }, UI_CONSTANTS.CHAT_DELAY_BEFORE_NAVIGATION);
       }
     } catch (error) {
       console.error("Error sending message:", error);
@@ -79,16 +80,16 @@ export function ChatInterface({ onComplete }: ChatInterfaceProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
         {messages.map((msg, index) => (
           <MessageBubble key={index} role={msg.role} content={msg.content} />
         ))}
         {loading && (
-          <div className="flex justify-start mb-4">
-            <Card className="bg-muted">
+          <div className="flex justify-start mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <Card className="bg-muted/50 border border-border/50">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   <span className="text-sm text-muted-foreground">Thinking...</span>
                 </div>
               </CardContent>
@@ -97,7 +98,7 @@ export function ChatInterface({ onComplete }: ChatInterfaceProps) {
         )}
         <div ref={messagesEndRef} />
       </div>
-      <div className="border-t p-4">
+      <div className="border-t border-border/50 bg-background/95 backdrop-blur-sm p-4">
         <div className="flex gap-2">
           <Input
             value={input}
@@ -107,8 +108,18 @@ export function ChatInterface({ onComplete }: ChatInterfaceProps) {
             disabled={loading}
             className="flex-1"
           />
-          <Button onClick={handleSend} disabled={loading || !input.trim()}>
-            Send
+          <Button 
+            onClick={handleSend} 
+            disabled={loading || !input.trim()}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              "Send"
+            )}
           </Button>
         </div>
       </div>

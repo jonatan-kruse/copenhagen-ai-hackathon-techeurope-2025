@@ -1,0 +1,15 @@
+export const FORM_CONSTANTS = {
+  MAX_CHARACTERS: 5000,
+  CHARACTER_WARNING_THRESHOLD: 0.9,
+} as const;
+
+export const PAGINATION = {
+  DEFAULT_PAGE_SIZE: 25,
+  PAGE_SIZE_OPTIONS: [10, 25, 50, 100],
+} as const;
+
+export const UI_CONSTANTS = {
+  CHAT_DELAY_BEFORE_NAVIGATION: 1000,
+  UPLOAD_SUCCESS_TIMEOUT: 3000,
+} as const;
+

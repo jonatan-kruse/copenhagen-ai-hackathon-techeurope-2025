@@ -2,40 +2,19 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AvailabilityBadge } from "@/components/ui/AvailabilityBadge";
+import { SkillTags } from "@/components/ui/SkillTags";
+import { MatchScoreBadge } from "@/components/ui/MatchScoreBadge";
+import { ConsultantCardSkeleton } from "@/components/ui/LoadingSkeleton";
 import type { Consultant } from "@/types/consultant";
+import type { ConsultantResultsState } from "@/types/navigation";
 import { getResumeDownloadUrl, buildApiUrl, matchConsultantsByRoles, type RoleQuery, type RoleMatchResult } from "@/lib/api";
-import { ArrowLeft, Loader2, FileText } from "lucide-react";
-
-function getAvailabilityColor(availability: Consultant["availability"]) {
-  switch (availability) {
-    case "available":
-      return "text-green-600 dark:text-green-400";
-    case "busy":
-      return "text-yellow-600 dark:text-yellow-400";
-    case "unavailable":
-      return "text-red-600 dark:text-red-400";
-    default:
-      return "text-muted-foreground";
-  }
-}
-
-function getAvailabilityLabel(availability: Consultant["availability"]) {
-  switch (availability) {
-    case "available":
-      return "Available";
-    case "busy":
-      return "Busy";
-    case "unavailable":
-      return "Unavailable";
-    default:
-      return "Unknown";
-  }
-}
+import { ArrowLeft, Loader2, FileText, Users, AlertCircle } from "lucide-react";
 
 export function ConsultantResultsPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const state = location.state as { projectDescription?: string; roles?: RoleQuery[] } | null;
+  const state = location.state as ConsultantResultsState | null;
   const projectDescription = state?.projectDescription || "";
   const roles = state?.roles;
   
@@ -117,7 +96,7 @@ export function ConsultantResultsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
+    <div className="w-full bg-background overflow-x-hidden">
       <div className="container mx-auto px-4 py-8 md:py-16 max-w-6xl">
         <div className="space-y-6">
           {/* Header with back button */}
@@ -130,17 +109,22 @@ export function ConsultantResultsPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="text-3xl md:text-4xl font-bold">Matching Consultants</h1>
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold text-primary">
+                Matching Consultants
+              </h1>
+              <p className="text-muted-foreground mt-1">Find the perfect team for your project</p>
+            </div>
           </div>
 
           {/* Project Description Display */}
           {projectDescription && !isRoleBased && (
-            <Card className="shadow-md">
+            <Card>
               <CardHeader>
-                <CardTitle className="text-xl">Your Project Description</CardTitle>
+                <CardTitle className="text-xl font-semibold">Your Project Description</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground whitespace-pre-wrap">{projectDescription}</p>
+                <p className="text-muted-foreground whitespace-pre-wrap leading-relaxed">{projectDescription}</p>
               </CardContent>
             </Card>
           )}
@@ -148,18 +132,27 @@ export function ConsultantResultsPage() {
           {/* Consultants List */}
           <div className="space-y-4">
             {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <span className="ml-3 text-muted-foreground">Loading consultants...</span>
+              <div className="space-y-4">
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="ml-3 text-muted-foreground">Loading consultants...</span>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <ConsultantCardSkeleton key={i} />
+                  ))}
+                </div>
               </div>
             ) : error ? (
-              <Card className="shadow-md border-destructive">
+              <Card className="border border-destructive/50">
                 <CardContent className="pt-6">
-                  <p className="text-destructive">Error: {error}</p>
+                  <div className="flex items-center gap-3 mb-4">
+                    <AlertCircle className="h-5 w-5 text-destructive" />
+                    <p className="text-destructive font-semibold">Error: {error}</p>
+                  </div>
                   <Button
                     onClick={() => window.location.reload()}
                     variant="outline"
-                    className="mt-4"
                   >
                     Retry
                   </Button>
@@ -168,36 +161,33 @@ export function ConsultantResultsPage() {
             ) : isRoleBased ? (
               // Role-based results display
               roleResults.length === 0 ? (
-                <Card className="shadow-md">
+                <Card>
                   <CardContent className="pt-6">
-                    <p className="text-muted-foreground text-center py-8">
-                      No consultants found for the specified roles.
-                    </p>
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground text-center text-lg font-semibold">
+                        No consultants found for the specified roles.
+                      </p>
+                      <p className="text-muted-foreground text-center text-sm mt-2">
+                        Try adjusting your requirements or check back later.
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
               ) : (
                 <div className="space-y-8">
                   {roleResults.map((roleResult, roleIndex) => (
                     <div key={roleIndex} className="space-y-4">
-                      <Card className="shadow-md border-l-4 border-l-primary">
+                      <Card className="border-l-2 border-l-primary">
                         <CardHeader>
-                          <CardTitle className="text-2xl">{roleResult.role.title}</CardTitle>
-                          <CardDescription className="text-base mt-2">
+                          <CardTitle className="text-2xl font-semibold">{roleResult.role.title}</CardTitle>
+                          <CardDescription className="text-base mt-2 leading-relaxed">
                             {roleResult.role.description}
                           </CardDescription>
                           {roleResult.role.requiredSkills.length > 0 && (
                             <div className="mt-3">
-                              <p className="text-sm font-medium mb-2">Required Skills:</p>
-                              <div className="flex flex-wrap gap-2">
-                                {roleResult.role.requiredSkills.map((skill, index) => (
-                                  <span
-                                    key={index}
-                                    className="inline-flex items-center rounded-md bg-primary/20 px-2 py-1 text-xs font-medium text-primary"
-                                  >
-                                    {skill}
-                                  </span>
-                                ))}
-                              </div>
+                              <p className="text-sm font-medium mb-2 text-muted-foreground">Required Skills:</p>
+                              <SkillTags skills={roleResult.role.requiredSkills} />
                             </div>
                           )}
                         </CardHeader>
@@ -205,23 +195,27 @@ export function ConsultantResultsPage() {
                       {roleResult.consultants.length === 0 ? (
                         <Card>
                           <CardContent className="pt-6">
-                            <p className="text-muted-foreground text-center py-4">
-                              No matching consultants found for this role.
-                            </p>
+                            <div className="flex flex-col items-center justify-center py-8">
+                              <Users className="h-10 w-10 text-muted-foreground mb-3" />
+                              <p className="text-muted-foreground text-center font-semibold">
+                                No matching consultants found for this role.
+                              </p>
+                            </div>
                           </CardContent>
                         </Card>
                       ) : (
                         <>
-                          <h3 className="text-lg font-semibold">
+                          <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <Users className="h-5 w-5" />
                             {roleResult.consultants.length} {roleResult.consultants.length === 1 ? "Candidate" : "Candidates"} Found
                           </h3>
                           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                             {roleResult.consultants.map((consultant, index) => (
-                              <Card key={consultant.id || `consultant-${roleIndex}-${index}`} className="shadow-md hover:shadow-lg transition-shadow">
+                              <Card key={consultant.id || `consultant-${roleIndex}-${index}`} className="transition-shadow hover:shadow-md">
                                 <CardHeader>
-                                  <div className="flex items-start justify-between">
-                                    <CardTitle className="text-xl">{consultant.name}</CardTitle>
-                                    <div className="flex items-center gap-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <CardTitle className="text-xl font-semibold">{consultant.name}</CardTitle>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
                                       {consultant.resumeId && (
                                         <Button
                                           variant="ghost"
@@ -235,18 +229,14 @@ export function ConsultantResultsPage() {
                                         </Button>
                                       )}
                                       {consultant.matchScore !== undefined && (
-                                        <span className="text-sm font-semibold text-primary">
-                                          {consultant.matchScore}% match
-                                        </span>
+                                        <MatchScoreBadge score={consultant.matchScore} />
                                       )}
                                     </div>
                                   </div>
-                                  <CardDescription>
-                                    <span className={getAvailabilityColor(consultant.availability)}>
-                                      {getAvailabilityLabel(consultant.availability)}
-                                    </span>
+                                  <CardDescription className="mt-2">
+                                    <AvailabilityBadge availability={consultant.availability} variant="text" />
                                     {consultant.experience && (
-                                      <span className="block mt-1 text-muted-foreground">
+                                      <span className="block mt-2 text-muted-foreground text-sm font-medium">
                                         {consultant.experience}
                                       </span>
                                     )}
@@ -255,17 +245,8 @@ export function ConsultantResultsPage() {
                                 <CardContent>
                                   <div className="space-y-3">
                                     <div>
-                                      <h3 className="text-sm font-medium mb-2">Skills</h3>
-                                      <div className="flex flex-wrap gap-2">
-                                        {consultant.skills.map((skill, index) => (
-                                          <span
-                                            key={index}
-                                            className="inline-flex items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary"
-                                          >
-                                            {skill}
-                                          </span>
-                                        ))}
-                                      </div>
+                                      <h3 className="text-sm font-medium mb-2 text-muted-foreground">Skills</h3>
+                                      <SkillTags skills={consultant.skills} />
                                     </div>
                                   </div>
                                 </CardContent>
@@ -281,17 +262,24 @@ export function ConsultantResultsPage() {
             ) : (
               // Legacy single query results
               consultants.length === 0 ? (
-                <Card className="shadow-md">
+                <Card>
                   <CardContent className="pt-6">
-                    <p className="text-muted-foreground text-center py-8">
-                      No consultants found. Try adjusting your project description.
-                    </p>
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground text-center text-lg font-semibold">
+                        No consultants found.
+                      </p>
+                      <p className="text-muted-foreground text-center text-sm mt-2">
+                        Try adjusting your project description or check back later.
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
               ) : (
                 <>
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-2xl font-semibold">
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <h2 className="text-2xl font-semibold flex items-center gap-2">
+                      <Users className="h-6 w-6" />
                       Found {consultants.length} {consultants.length === 1 ? "Consultant" : "Consultants"}
                     </h2>
                     <p className="text-sm text-muted-foreground">
@@ -300,10 +288,10 @@ export function ConsultantResultsPage() {
                   </div>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {consultants.map((consultant, index) => (
-                      <Card key={consultant.id || `consultant-${index}`} className="shadow-md hover:shadow-lg transition-shadow">
+                      <Card key={consultant.id || `consultant-${index}`} className="transition-shadow hover:shadow-md">
                         <CardHeader>
                           <div className="flex items-start justify-between">
-                            <CardTitle className="text-xl">{consultant.name}</CardTitle>
+                            <CardTitle className="text-xl font-semibold">{consultant.name}</CardTitle>
                             <div className="flex items-center gap-2">
                               {consultant.resumeId && (
                                 <Button
@@ -318,16 +306,12 @@ export function ConsultantResultsPage() {
                                 </Button>
                               )}
                               {consultant.matchScore !== undefined && (
-                                <span className="text-sm font-semibold text-primary">
-                                  {consultant.matchScore}% match
-                                </span>
+                                <MatchScoreBadge score={consultant.matchScore} />
                               )}
                             </div>
                           </div>
                           <CardDescription>
-                            <span className={getAvailabilityColor(consultant.availability)}>
-                              {getAvailabilityLabel(consultant.availability)}
-                            </span>
+                            <AvailabilityBadge availability={consultant.availability} variant="text" />
                             {consultant.experience && (
                               <span className="block mt-1 text-muted-foreground">
                                 {consultant.experience}
@@ -339,16 +323,7 @@ export function ConsultantResultsPage() {
                           <div className="space-y-3">
                             <div>
                               <h3 className="text-sm font-medium mb-2">Skills</h3>
-                              <div className="flex flex-wrap gap-2">
-                                {consultant.skills.map((skill, index) => (
-                                  <span
-                                    key={index}
-                                    className="inline-flex items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary"
-                                  >
-                                    {skill}
-                                  </span>
-                                ))}
-                              </div>
+                              <SkillTags skills={consultant.skills} />
                             </div>
                           </div>
                         </CardContent>

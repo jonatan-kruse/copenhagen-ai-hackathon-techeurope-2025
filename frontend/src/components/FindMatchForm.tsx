@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { FORM_CONSTANTS } from "@/lib/constants";
+import { Loader2 } from "lucide-react";
 
 interface FindMatchFormProps {
   onMatch: (description: string) => void;
@@ -10,7 +12,7 @@ export function FindMatchForm({ onMatch }: FindMatchFormProps) {
   const [loading, setLoading] = useState(false);
 
   const characterCount = description.length;
-  const maxCharacters = 5000;
+  const maxCharacters = FORM_CONSTANTS.MAX_CHARACTERS;
 
   const handleSubmit = async () => {
     if (!description.trim() || characterCount > maxCharacters) return;
@@ -32,6 +34,9 @@ export function FindMatchForm({ onMatch }: FindMatchFormProps) {
     }
   };
 
+  const isNearLimit = characterCount > maxCharacters * FORM_CONSTANTS.CHARACTER_WARNING_THRESHOLD;
+  const isOverLimit = characterCount > maxCharacters;
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 p-4 space-y-4 flex flex-col min-h-0">
@@ -47,33 +52,51 @@ export function FindMatchForm({ onMatch }: FindMatchFormProps) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Enter the job description, role requirements, skills needed, and any other relevant details to find the best matching candidate..."
-            className="flex-1 w-full rounded-md border border-input bg-background px-3 py-2 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/10 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm resize-none"
+            className={`flex-1 w-full rounded-md border bg-background px-3 py-2 text-base font-normal shadow-sm transition-all file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:shadow-sm disabled:cursor-not-allowed disabled:opacity-50 md:text-sm resize-none ${
+              isOverLimit
+                ? "border-destructive/60 focus-visible:ring-destructive/20"
+                : isNearLimit
+                ? "border-accent/60 focus-visible:ring-accent/20"
+                : "border-border/50 focus-visible:ring-ring/20"
+            }`}
             aria-label="Job description input"
             maxLength={maxCharacters}
             onKeyDown={handleKeyDown}
             disabled={loading}
           />
-          <div className="flex justify-between items-center text-xs text-muted-foreground mt-2 flex-shrink-0">
-            <span>
+          <div className="flex justify-between items-center text-xs mt-2 flex-shrink-0">
+            <span className={isOverLimit ? "text-destructive font-medium" : "text-muted-foreground"}>
               {characterCount} / {maxCharacters} characters
             </span>
-            {characterCount > maxCharacters * 0.9 && (
-              <span className="text-yellow-600 dark:text-yellow-400">
+            {isNearLimit && !isOverLimit && (
+              <span className="text-yellow-600 font-medium animate-in fade-in">
                 Approaching limit
+              </span>
+            )}
+            {isOverLimit && (
+              <span className="text-destructive font-medium animate-in fade-in">
+                Character limit exceeded
               </span>
             )}
           </div>
         </div>
       </div>
-      <div className="border-t p-4 flex-shrink-0">
+      <div className="border-t border-border/50 bg-background p-4 flex-shrink-0">
         <div className="flex justify-end gap-2">
           <Button
             onClick={handleSubmit}
-            disabled={!description.trim() || characterCount > maxCharacters || loading}
+            disabled={!description.trim() || isOverLimit || loading}
             size="lg"
             className="min-w-[120px]"
           >
-            {loading ? "Finding Match..." : "Find Match"}
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Finding Match...
+              </>
+            ) : (
+              "Find Match"
+            )}
           </Button>
         </div>
       </div>
