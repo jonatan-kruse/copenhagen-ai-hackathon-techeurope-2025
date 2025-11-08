@@ -208,10 +208,11 @@ jobs:
 
       - name: Start new containers
         run: |
-          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << EOF
             set -e
             echo "Starting new containers..."
             cd /opt/projmatch
+            export OPENAI_APIKEY='${{ secrets.OPENAI_APIKEY }}'
             docker compose -f docker-compose.prod.yml up -d
             echo "Containers started"
           EOF
