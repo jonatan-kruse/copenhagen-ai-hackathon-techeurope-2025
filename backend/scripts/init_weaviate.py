@@ -1,5 +1,5 @@
 """
-Initialize Weaviate schema for Consultant class.
+Initialize Weaviate schema for Consultant and Resume classes.
 """
 import weaviate
 import os
@@ -11,8 +11,8 @@ weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 
 client = weaviate.Client(url=weaviate_url)
 
-# Define the schema
-schema = {
+# Define the Consultant schema
+consultant_schema = {
     "class": "Consultant",
     "description": "A consultant with skills and availability",
     "properties": [
@@ -39,17 +39,74 @@ schema = {
     ]
 }
 
-# Check if class exists, if so delete it
+# Define the Resume schema
+resume_schema = {
+    "class": "Resume",
+    "description": "A resume parsed from PDF",
+    "properties": [
+        {
+            "name": "name",
+            "dataType": ["string"],
+            "description": "Name extracted from resume"
+        },
+        {
+            "name": "email",
+            "dataType": ["string"],
+            "description": "Email address from resume"
+        },
+        {
+            "name": "phone",
+            "dataType": ["string"],
+            "description": "Phone number from resume"
+        },
+        {
+            "name": "skills",
+            "dataType": ["string[]"],
+            "description": "List of skills extracted from resume"
+        },
+        {
+            "name": "experience",
+            "dataType": ["text"],
+            "description": "Work experience summary"
+        },
+        {
+            "name": "education",
+            "dataType": ["text"],
+            "description": "Education details"
+        },
+        {
+            "name": "full_text",
+            "dataType": ["text"],
+            "description": "Complete extracted text for vectorization"
+        }
+    ]
+}
+
+# Check if Consultant class exists, if so delete it
 try:
     client.schema.delete_class("Consultant")
     print("Deleted existing Consultant class")
 except:
     print("No existing Consultant class found")
 
-# Create the class
+# Create the Consultant class
 try:
-    client.schema.create_class(schema)
+    client.schema.create_class(consultant_schema)
     print("Successfully created Consultant class in Weaviate")
 except Exception as e:
-    print(f"Error creating schema: {e}")
+    print(f"Error creating Consultant schema: {e}")
+
+# Check if Resume class exists, if so delete it
+try:
+    client.schema.delete_class("Resume")
+    print("Deleted existing Resume class")
+except:
+    print("No existing Resume class found")
+
+# Create the Resume class
+try:
+    client.schema.create_class(resume_schema)
+    print("Successfully created Resume class in Weaviate")
+except Exception as e:
+    print(f"Error creating Resume schema: {e}")
 

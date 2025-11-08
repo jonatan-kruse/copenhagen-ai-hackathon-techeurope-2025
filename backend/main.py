@@ -1,10 +1,15 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import weaviate
 import os
+import uuid
+import tempfile
 from dotenv import load_dotenv
+from storage import LocalFileStorage
+from services.resume_parser import parse_resume_pdf
 
 load_dotenv()
 
@@ -26,6 +31,10 @@ try:
 except Exception as e:
     print(f"Warning: Could not connect to Weaviate at {weaviate_url}: {e}")
     client = None
+
+# Storage
+upload_dir = os.getenv("UPLOAD_DIR", "uploads/resumes")
+storage = LocalFileStorage(base_dir=upload_dir)
 
 # Pydantic models
 class Consultant(BaseModel):
@@ -229,7 +238,91 @@ async def delete_consultants_batch(request: DeleteRequest):
         traceback.print_exc()
         return {"success": False, "error": str(e)}
 
+@app.post("/api/resumes/upload")
+async def upload_resume(file: UploadFile = File(...)):
+    """
+    Upload a PDF resume, parse it, and store in Weaviate.
+    Returns the resume object with ID.
+    """
+    if not client:
+        raise HTTPException(status_code=503, detail="Weaviate client not available")
+    
+    # Validate file type
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+    
+    # Generate UUID for resume
+    resume_id = str(uuid.uuid4())
+    
+    try:
+        # Read PDF bytes
+        pdf_bytes = await file.read()
+        
+        # Save PDF temporarily for parsing
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            tmp_file.write(pdf_bytes)
+            tmp_path = tmp_file.name
+        
+        try:
+            # Parse resume
+            resume_data = parse_resume_pdf(tmp_path)
+            
+            # Save PDF to storage
+            storage.save_pdf(pdf_bytes, resume_id)
+            
+            # Insert into Weaviate with resume_id as UUID
+            client.data_object.create(
+                data_object=resume_data,
+                class_name="Resume",
+                uuid=resume_id
+            )
+            
+            # Return resume object with ID
+            return {
+                "id": resume_id,
+                **resume_data
+            }
+        finally:
+            # Clean up temp file
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+    
+    except Exception as e:
+        # Clean up PDF if Weaviate insertion failed
+        try:
+            pdf_path = storage.get_path(resume_id)
+            if os.path.exists(pdf_path):
+                os.unlink(pdf_path)
+        except:
+            pass
+        
+        print(f"Error uploading resume: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error processing resume: {str(e)}")
+
+@app.get("/api/resumes/{resume_id}/pdf")
+async def get_resume_pdf(resume_id: str):
+    """
+    Retrieve the original PDF file by resume ID.
+    """
+    try:
+        file_path = storage.get_path(resume_id)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="PDF not found")
+        
+        return FileResponse(
+            file_path,
+            media_type="application/pdf",
+            filename=f"{resume_id}.pdf"
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    except Exception as e:
+        print(f"Error retrieving PDF: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving PDF: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
 
