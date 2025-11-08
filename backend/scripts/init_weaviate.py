@@ -37,11 +37,29 @@ for attempt in range(max_retries):
 consultant_schema = {
     "class": "Consultant",
     "description": "A consultant with skills and availability",
+    "vectorizer": "text2vec-openai",
+    "moduleConfig": {
+        "text2vec-openai": {
+            "model": "ada",
+            "modelVersion": "002",
+            "type": "text"
+        }
+    },
     "properties": [
         {
             "name": "name",
             "dataType": ["string"],
             "description": "The name of the consultant"
+        },
+        {
+            "name": "email",
+            "dataType": ["string"],
+            "description": "Email address of the consultant"
+        },
+        {
+            "name": "phone",
+            "dataType": ["string"],
+            "description": "Phone number of the consultant"
         },
         {
             "name": "skills",
@@ -55,8 +73,13 @@ consultant_schema = {
         },
         {
             "name": "experience",
-            "dataType": ["string"],
+            "dataType": ["text"],
             "description": "Experience description of the consultant"
+        },
+        {
+            "name": "education",
+            "dataType": ["text"],
+            "description": "Education details of the consultant"
         }
     ]
 }
@@ -95,11 +118,6 @@ resume_schema = {
             "name": "education",
             "dataType": ["text"],
             "description": "Education details"
-        },
-        {
-            "name": "full_text",
-            "dataType": ["text"],
-            "description": "Complete extracted text for vectorization"
         }
     ]
 }

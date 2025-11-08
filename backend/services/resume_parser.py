@@ -1,159 +1,183 @@
 """
-Resume PDF parsing service.
+Resume PDF parsing service using OpenAI API.
 Extracts structured data from PDF resumes.
 """
-import pyresumeparser
+import os
 import json
-from typing import Dict, Any
+import base64
+import random
+from io import BytesIO
+from pdf2image import convert_from_bytes
+from openai import OpenAI
+from dotenv import load_dotenv
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from models import ConsultantData
+
+load_dotenv()
+
+# Common first and last names for generating realistic names
+FIRST_NAMES = [
+    "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Avery", "Quinn",
+    "Blake", "Cameron", "Dakota", "Drew", "Emery", "Finley", "Harper", "Hayden",
+    "Jamie", "Kai", "Logan", "Micah", "Noah", "Parker", "Peyton", "Reese",
+    "River", "Rowan", "Sage", "Skylar", "Tatum", "Tyler", "Zion"
+]
+
+LAST_NAMES = [
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
+    "Rodriguez", "Martinez", "Hernandez", "Lopez", "Wilson", "Anderson", "Thomas",
+    "Taylor", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White", "Harris",
+    "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Walker", "Young", "Allen",
+    "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores", "Green",
+    "Adams", "Nelson", "Baker", "Hall", "Rivera", "Campbell", "Mitchell", "Carter",
+    "Roberts", "Gomez", "Phillips", "Evans", "Turner", "Diaz", "Parker", "Cruz",
+    "Edwards", "Collins", "Reyes", "Stewart", "Morris", "Morales", "Murphy", "Cook"
+]
 
 
-def parse_resume_pdf(pdf_path: str) -> Dict[str, Any]:
+def generate_random_name() -> str:
     """
-    Parse PDF resume and extract structured data.
+    Generate a random realistic name.
+    
+    Returns:
+        A random first name + last name combination with an asterisk (*) appended
+    """
+    first_name = random.choice(FIRST_NAMES)
+    last_name = random.choice(LAST_NAMES)
+    return f"{first_name} {last_name}*"
+
+
+def parse_resume_pdf(pdf_bytes: bytes) -> ConsultantData:
+    """
+    Parse PDF resume and extract structured data using OpenAI API.
     
     Args:
-        pdf_path: Path to PDF file
+        pdf_bytes: PDF file content as bytes
         
     Returns:
-        Dictionary with structured resume data
+        ConsultantData instance with parsed resume data
+        
+    Raises:
+        Exception if parsing fails
     """
+    api_key = os.getenv("OPENAI_APIKEY")
+    if not api_key:
+        raise ValueError("OPENAI_APIKEY not found in environment variables")
+    
+    client = OpenAI(api_key=api_key)
+    
+    # Convert PDF pages to images
     try:
-        parsed_result = pyresumeparser.parse_resume(pdf_path)
-        
-        # pyresumeparser returns a JSON string, not a dict
-        # Parse it to a dictionary
-        if isinstance(parsed_result, str):
-            parsed_data = json.loads(parsed_result)
-        elif isinstance(parsed_result, dict):
-            parsed_data = parsed_result
-        else:
-            raise ValueError(f"Unexpected return type: {type(parsed_result)}")
-        
-        # pyresumeparser returns a dict with keys like:
-        # first_name, last_name, email, phone, skills, companies_worked, 
-        # designation, education, total_experience, projects_worked, etc.
-        # Most values are lists
-        
-        # Extract name from first_name and last_name
-        name_parts = []
-        first_name = parsed_data.get('first_name', [])
-        last_name = parsed_data.get('last_name', [])
-        if isinstance(first_name, list) and first_name:
-            name_parts.extend([str(n) for n in first_name if n])
-        elif first_name:
-            name_parts.append(str(first_name))
-        if isinstance(last_name, list) and last_name:
-            name_parts.extend([str(n) for n in last_name if n])
-        elif last_name:
-            name_parts.append(str(last_name))
-        name = " ".join(name_parts) if name_parts else ""
-        
-        # Extract email (usually a list)
-        email_list = parsed_data.get('email', [])
-        email = ""
-        if isinstance(email_list, list) and email_list:
-            email = str(email_list[0])
-        elif email_list:
-            email = str(email_list)
-        
-        # Extract phone (usually a list)
-        phone_list = parsed_data.get('phone', [])
-        phone = ""
-        if isinstance(phone_list, list) and phone_list:
-            phone = str(phone_list[0])
-        elif phone_list:
-            phone = str(phone_list)
-        
-        # Extract skills (list)
-        skills_list = parsed_data.get('skills', [])
-        skills = []
-        if isinstance(skills_list, list):
-            skills = [str(s) for s in skills_list if s]
-        elif skills_list:
-            skills = [str(skills_list)]
-        
-        # Extract experience - combine multiple fields
-        experience_parts = []
-        
-        # Total experience
-        total_exp = parsed_data.get('total_experience', [])
-        if isinstance(total_exp, list) and total_exp:
-            experience_parts.append(f"Total Experience: {total_exp[0]}")
-        elif total_exp:
-            experience_parts.append(f"Total Experience: {total_exp}")
-        
-        # Companies worked
-        companies = parsed_data.get('companies_worked', [])
-        if isinstance(companies, list) and companies:
-            experience_parts.append(f"Companies: {', '.join([str(c) for c in companies])}")
-        elif companies:
-            experience_parts.append(f"Companies: {companies}")
-        
-        # Designations/Positions
-        designations = parsed_data.get('designation', [])
-        if isinstance(designations, list) and designations:
-            experience_parts.append(f"Roles: {', '.join([str(d) for d in designations])}")
-        elif designations:
-            experience_parts.append(f"Roles: {designations}")
-        
-        experience = " | ".join(experience_parts) if experience_parts else ""
-        
-        # Extract education (list)
-        education_list = parsed_data.get('education', [])
-        education = ""
-        if isinstance(education_list, list) and education_list:
-            education = ", ".join([str(e) for e in education_list if e])
-        elif education_list:
-            education = str(education_list)
-        
-        # Build full_text from available fields
-        full_text_parts = []
-        if name:
-            full_text_parts.append(f"Name: {name}")
-        if email:
-            full_text_parts.append(f"Email: {email}")
-        if phone:
-            full_text_parts.append(f"Phone: {phone}")
-        if skills:
-            full_text_parts.append(f"Skills: {', '.join(skills)}")
-        if experience:
-            full_text_parts.append(f"Experience: {experience}")
-        if education:
-            full_text_parts.append(f"Education: {education}")
-        
-        # Add projects if available
-        projects = parsed_data.get('projects_worked', [])
-        if isinstance(projects, list) and projects:
-            full_text_parts.append(f"Projects: {', '.join([str(p) for p in projects])}")
-        elif projects:
-            full_text_parts.append(f"Projects: {projects}")
-        
-        full_text = "\n".join(full_text_parts) if full_text_parts else ""
-        
-        resume_data = {
-            "name": name,
-            "email": email,
-            "phone": phone,
-            "skills": skills,
-            "experience": experience,
-            "education": education,
-            "full_text": full_text
-        }
-        
-        return resume_data
+        images = convert_from_bytes(pdf_bytes)
+        if not images:
+            raise ValueError("Failed to convert PDF to images")
     except Exception as e:
-        # Log the error for debugging
-        print(f"ERROR parsing resume: {e}")
-        import traceback
-        traceback.print_exc()
-        # Return minimal structure on parsing failure
-        return {
-            "name": "",
-            "email": "",
-            "phone": "",
-            "skills": [],
-            "experience": "",
-            "education": "",
-            "full_text": ""
-        }
+        raise ValueError(f"Error converting PDF to images: {str(e)}")
+    
+    # Convert first page to base64 (resumes are typically single page or we can process multiple pages)
+    # For now, process first page. Can be extended to process all pages if needed
+    image_bytes = BytesIO()
+    images[0].save(image_bytes, format='PNG')
+    image_base64 = base64.b64encode(image_bytes.getvalue()).decode('utf-8')
+    
+    # Call OpenAI API
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert at extracting structured information from resumes. Extract the following fields: name, email, phone, skills (as array of strings), experience (as text summary), education (as text summary). Return JSON only with these exact field names."
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Extract structured information from this resume. Return JSON with fields: name (string), email (string, can be empty), phone (string, can be empty), skills (array of strings), experience (text summary), education (text summary). Ensure all fields are present in the response."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        # Parse response
+        if not response.choices or len(response.choices) == 0:
+            raise ValueError("OpenAI API returned no choices in response")
+        
+        choice = response.choices[0]
+        message = choice.message
+        content = message.content
+        
+        # Check finish_reason to understand why content might be None
+        finish_reason = getattr(choice, 'finish_reason', None)
+        if finish_reason:
+            if finish_reason == "content_filter":
+                raise ValueError("OpenAI API filtered the response content due to content policy")
+            elif finish_reason == "length":
+                raise ValueError("OpenAI API response was truncated due to length limits")
+            elif finish_reason == "stop" and content is None:
+                raise ValueError("OpenAI API returned None content with stop finish_reason")
+        
+        if content is None:
+            raise ValueError(f"OpenAI API returned None content. Finish reason: {finish_reason}")
+        
+        if not isinstance(content, str):
+            raise ValueError(f"OpenAI API returned unexpected content type: {type(content)}")
+        
+        if not content.strip():
+            raise ValueError("OpenAI API returned empty content string")
+        
+        try:
+            parsed_data = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse OpenAI response as JSON. Content: {content[:200]}... Error: {str(e)}")
+        
+        # Extract fields and ensure they match ConsultantData structure
+        name = parsed_data.get("name", "").strip()
+        email = parsed_data.get("email", "").strip()
+        phone = parsed_data.get("phone", "").strip()
+        skills = parsed_data.get("skills", [])
+        if isinstance(skills, str):
+            # Handle case where skills might be a string
+            skills = [s.strip() for s in skills.split(",") if s.strip()]
+        elif not isinstance(skills, list):
+            skills = []
+        else:
+            skills = [str(s).strip() for s in skills if s]
 
+        experience = parsed_data.get("experience", "").strip()
+        education = parsed_data.get("education", "").strip()
+        
+        # If name is missing or empty, generate a random realistic name with asterisk
+        if not name:
+            name = generate_random_name()
+        
+        # Create and return ConsultantData instance
+        return ConsultantData(
+            name=name,
+            email=email,
+            phone=phone,
+            skills=skills,
+            experience=experience,
+            education=education,
+            availability="available"
+        )
+        
+    except ValueError as e:
+        # Re-raise ValueError as-is (already formatted)
+        raise
+    except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"OpenAI API error details: {error_details}")
+        raise ValueError(f"OpenAI API error: {str(e)}")

@@ -6,10 +6,10 @@ from typing import List, Optional
 import weaviate
 import os
 import uuid
-import tempfile
 from dotenv import load_dotenv
 from storage import LocalFileStorage
 from services.resume_parser import parse_resume_pdf
+from models import ConsultantData
 
 load_dotenv()
 
@@ -39,15 +39,10 @@ upload_dir = os.getenv("UPLOAD_DIR", "uploads/resumes")
 storage = LocalFileStorage(base_dir=upload_dir)
 
 # Pydantic models
-class Consultant(BaseModel):
+class Consultant(ConsultantData):
     id: Optional[str] = None
-    name: str
-    skills: List[str]
-    availability: str
-    experience: Optional[str] = None
     matchScore: Optional[float] = None
-    hasResume: Optional[bool] = False
-    resumeId: Optional[str] = None
+    resumeId: Optional[str] = None  # If present, consultant has a resume PDF
 
 class ProjectDescription(BaseModel):
     projectDescription: str
@@ -78,21 +73,21 @@ async def health():
 @app.post("/api/consultants/match", response_model=ConsultantResponse)
 async def match_consultants(project: ProjectDescription):
     """
-    Match consultants based on project description using vector search.
+    Match consultants based on project description using Weaviate vector search.
     """
     if not client:
         return ConsultantResponse(consultants=[])
     
     try:
-        # For now, we'll do a simple text search
-        # In a real implementation, you'd use vector embeddings for semantic search
-        query = project.projectDescription.lower()
-        
-        # Query Consultant collection
+        # Use Weaviate's pure vector search (semantic similarity)
+        # .with_near_text() generates a vector from the query text and compares it to stored object vectors
         response = (
             client.query
-            .get("Consultant", ["name", "skills", "availability", "experience"])
-            .with_additional(["id"])
+            .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
+            .with_near_text({
+                "concepts": [project.projectDescription]
+            })
+            .with_additional(["id", "certainty", "distance"])
             .with_limit(20)
             .do()
         )
@@ -101,32 +96,44 @@ async def match_consultants(project: ProjectDescription):
         if "data" in response and "Get" in response["data"] and "Consultant" in response["data"]["Get"]:
             results = response["data"]["Get"]["Consultant"]
             
-            # Calculate match scores based on keyword matching
             for consultant in results:
                 consultant_id = consultant.get("_additional", {}).get("id")
-                match_score = calculate_match_score(consultant, query)
-                consultants.append({
+                additional = consultant.get("_additional", {})
+                
+                # Get similarity score from Weaviate vector search
+                # Certainty is a similarity score (0-1, higher = more similar)
+                # Convert to float in case Weaviate returns string, then convert to 0-100 scale
+                certainty_raw = additional.get("certainty", 0.0)
+                try:
+                    certainty = float(certainty_raw) if certainty_raw else 0.0
+                except (ValueError, TypeError):
+                    certainty = 0.0
+                match_score = round(certainty * 100, 1) if certainty else 0.0
+                
+                consultant_data = {
                     "id": consultant_id,
                     "name": consultant.get("name", ""),
+                    "email": consultant.get("email", ""),
+                    "phone": consultant.get("phone", ""),
                     "skills": consultant.get("skills", []),
-                    "availability": consultant.get("availability", "unknown"),
-                    "experience": consultant.get("experience"),
-                    "matchScore": round(match_score, 1),
-                    "hasResume": False,  # Will be determined by PDF existence
+                    "availability": consultant.get("availability", "available"),
+                    "experience": consultant.get("experience", ""),
+                    "education": consultant.get("education", ""),
+                    "matchScore": match_score,
                     "resumeId": None
-                })
+                }
                 
                 # Check if PDF exists for this consultant
                 try:
                     pdf_path = storage.get_path(consultant_id)
                     if os.path.exists(pdf_path):
-                        consultants[-1]["hasResume"] = True
-                        consultants[-1]["resumeId"] = consultant_id
+                        consultant_data["resumeId"] = consultant_id
                 except:
                     pass
+                
+                consultants.append(consultant_data)
             
-            # Sort by match score
-            consultants.sort(key=lambda x: x["matchScore"] or 0, reverse=True)
+            # Results are already sorted by similarity from Weaviate
         
         return ConsultantResponse(consultants=consultants)
     
@@ -135,29 +142,6 @@ async def match_consultants(project: ProjectDescription):
         import traceback
         traceback.print_exc()
         return ConsultantResponse(consultants=[])
-
-def calculate_match_score(consultant: dict, query: str) -> float:
-    """
-    Calculate a simple match score based on keyword matching.
-    In production, this would use vector similarity.
-    """
-    score = 0.0
-    query_words = set(query.split())
-    
-    # Match skills
-    skills = [s.lower() for s in consultant.get("skills", [])]
-    for skill in skills:
-        if any(word in skill for word in query_words):
-            score += 10
-    
-    # Match experience
-    experience = consultant.get("experience", "").lower()
-    if experience:
-        matches = sum(1 for word in query_words if word in experience)
-        score += matches * 2
-    
-    # Normalize to 0-100
-    return min(100.0, score)
 
 @app.get("/api/consultants", response_model=ConsultantResponse)
 async def get_all_consultants():
@@ -170,7 +154,7 @@ async def get_all_consultants():
     try:
         response = (
             client.query
-            .get("Consultant", ["name", "skills", "availability", "experience"])
+            .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
             .with_additional(["id"])
             .with_limit(100)
             .do()
@@ -184,23 +168,27 @@ async def get_all_consultants():
                 additional = consultant.get("_additional", {})
                 consultant_id = additional.get("id")
                 
+                consultant_data = {
+                    "id": consultant_id,
+                    "name": consultant.get("name", ""),
+                    "email": consultant.get("email", ""),
+                    "phone": consultant.get("phone", ""),
+                    "skills": consultant.get("skills", []),
+                    "availability": consultant.get("availability", "available"),
+                    "experience": consultant.get("experience", ""),
+                    "education": consultant.get("education", ""),
+                    "resumeId": None
+                }
+                
                 # Check if PDF exists for this consultant
-                has_resume = False
                 try:
                     pdf_path = storage.get_path(consultant_id)
-                    has_resume = os.path.exists(pdf_path)
+                    if os.path.exists(pdf_path):
+                        consultant_data["resumeId"] = consultant_id
                 except:
                     pass
                 
-                consultants.append({
-                    "id": consultant_id,
-                    "name": consultant.get("name", ""),
-                    "skills": consultant.get("skills", []),
-                    "availability": consultant.get("availability", "unknown"),
-                    "experience": consultant.get("experience"),
-                    "hasResume": has_resume,
-                    "resumeId": consultant_id if has_resume else None
-                })
+                consultants.append(consultant_data)
         
         return ConsultantResponse(consultants=consultants)
     
@@ -294,44 +282,27 @@ async def upload_resume(file: UploadFile = File(...)):
         # Read PDF bytes
         pdf_bytes = await file.read()
         
-        # Save PDF temporarily for parsing
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-            tmp_file.write(pdf_bytes)
-            tmp_path = tmp_file.name
+        # Parse resume - returns ConsultantData (pass bytes directly)
+        consultant_data = parse_resume_pdf(pdf_bytes)
         
-        try:
-            # Parse resume
-            resume_data = parse_resume_pdf(tmp_path)
-            
-            # Save PDF to storage using consultant_id
-            storage.save_pdf(pdf_bytes, consultant_id)
-            
-            # Create Consultant entry from parsed resume data
-            consultant_data = {
-                "name": resume_data.get("name", ""),
-                "skills": resume_data.get("skills", []),
-                "availability": "available",  # Default for uploaded resumes
-                "experience": resume_data.get("experience", "")
-            }
-            
-            # Insert into Weaviate Consultant collection with consultant_id as UUID
-            client.data_object.create(
-                data_object=consultant_data,
-                class_name="Consultant",
-                uuid=consultant_id
-            )
-            
-            # Return consultant object with ID
-            return {
-                "id": consultant_id,
-                **consultant_data,
-                "hasResume": True,
-                "resumeId": consultant_id
-            }
-        finally:
-            # Clean up temp file
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        # Save PDF to storage using consultant_id
+        storage.save_pdf(pdf_bytes, consultant_id)
+        
+        # Insert into Weaviate Consultant collection with consultant_id as UUID
+        # Convert ConsultantData to dict for Weaviate
+        consultant_dict = consultant_data.model_dump()
+        client.data_object.create(
+            data_object=consultant_dict,
+            class_name="Consultant",
+            uuid=consultant_id
+        )
+        
+        # Return consultant object with ID and resumeId
+        return {
+            "id": consultant_id,
+            **consultant_dict,
+            "resumeId": consultant_id
+        }
     
     except Exception as e:
         # Clean up PDF if Weaviate insertion failed
