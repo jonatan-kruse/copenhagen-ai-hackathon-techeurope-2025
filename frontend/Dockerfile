@@ -12,6 +12,7 @@ RUN bun install --frozen-lockfile
 
 # Copy source files
 COPY src ./src
+COPY styles ./styles
 COPY tsconfig.json ./
 COPY components.json ./
 
