@@ -6,10 +6,12 @@ from typing import List, Optional
 import weaviate
 import os
 import uuid
+import json
 from dotenv import load_dotenv
+from openai import OpenAI
 from storage import LocalFileStorage
 from services.resume_parser import parse_resume_pdf
-from models import ConsultantData
+from models import ConsultantData, ChatRequest, ChatResponse, ChatMessage, RoleQuery, RoleMatchRequest, RoleMatchResponse, RoleMatchResult
 
 load_dotenv()
 
@@ -81,13 +83,18 @@ async def match_consultants(project: ProjectDescription):
     try:
         # Use Weaviate's pure vector search (semantic similarity)
         # .with_near_text() generates a vector from the query text and compares it to stored object vectors
+        # Distance threshold: 0.3 for cosine distance (filters out poor matches)
+        # Cosine distance ranges from 0 (identical) to 2 (opposite)
+        MAX_DISTANCE = 0.3  # Only return matches with distance <= 0.3 (good matches)
+        
         response = (
             client.query
             .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
             .with_near_text({
-                "concepts": [project.projectDescription]
+                "concepts": [project.projectDescription],
+                "distance": MAX_DISTANCE
             })
-            .with_additional(["id", "certainty", "distance"])
+            .with_additional(["id", "distance"])
             .with_limit(20)
             .do()
         )
@@ -100,15 +107,20 @@ async def match_consultants(project: ProjectDescription):
                 consultant_id = consultant.get("_additional", {}).get("id")
                 additional = consultant.get("_additional", {})
                 
-                # Get similarity score from Weaviate vector search
-                # Certainty is a similarity score (0-1, higher = more similar)
-                # Convert to float in case Weaviate returns string, then convert to 0-100 scale
-                certainty_raw = additional.get("certainty", 0.0)
+                # Get distance from Weaviate vector search
+                # Distance is cosine distance: 0 = identical, higher = less similar
+                # Convert distance to similarity score: similarity = 1 - distance
+                # Then normalize to 0-100 scale
+                distance_raw = additional.get("distance", None)
                 try:
-                    certainty = float(certainty_raw) if certainty_raw else 0.0
+                    distance = float(distance_raw) if distance_raw is not None else MAX_DISTANCE
                 except (ValueError, TypeError):
-                    certainty = 0.0
-                match_score = round(certainty * 100, 1) if certainty else 0.0
+                    distance = MAX_DISTANCE
+                
+                # Convert distance to similarity score (0-100)
+                # For cosine distance: similarity = 1 - distance, clamped to 0-1
+                similarity = max(0.0, min(1.0, 1.0 - distance))
+                match_score = round(similarity * 100, 1)
                 
                 consultant_data = {
                     "id": consultant_id,
@@ -387,6 +399,185 @@ async def get_overview():
         import traceback
         traceback.print_exc()
         return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """
+    Chat endpoint for interactive team assembly conversation.
+    Uses OpenAI to ask clarifying questions and generate role queries.
+    """
+    api_key = os.getenv("OPENAI_APIKEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_APIKEY not found in environment variables")
+    
+    client_openai = OpenAI(api_key=api_key)
+    
+    # System prompt for team assembly
+    system_prompt = """You are a helpful assistant helping assemble a development team. 
+Your goal is to understand the project requirements through conversation.
+
+Ask clarifying questions about:
+- Project type and goals
+- Team size needed
+- Technical requirements and stack
+- Timeline and constraints
+- Specific features or functionalities needed
+
+Be conversational and friendly. Once you have enough information to determine what roles are needed, 
+generate structured role queries in JSON format. The JSON should be embedded in your response like this:
+
+<roles>
+{
+  "roles": [
+    {
+      "title": "Frontend Engineer",
+      "description": "Description of what this role needs",
+      "query": "Vector search query for matching candidates (e.g., 'Frontend developer with React and TypeScript experience')",
+      "requiredSkills": ["React", "TypeScript"]
+    }
+  ]
+}
+</roles>
+
+Only include the <roles> tag when you have enough information to generate role queries. 
+Otherwise, continue asking questions."""
+    
+    try:
+        # Prepare messages for OpenAI
+        messages = [{"role": "system", "content": system_prompt}]
+        for msg in request.messages:
+            messages.append({"role": msg.role, "content": msg.content})
+        
+        # Call OpenAI
+        response = client_openai.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            temperature=0.7
+        )
+        
+        if not response.choices or len(response.choices) == 0:
+            raise HTTPException(status_code=500, detail="OpenAI API returned no choices")
+        
+        content = response.choices[0].message.content
+        
+        # Check if response contains role queries
+        is_complete = False
+        roles = None
+        
+        if "<roles>" in content and "</roles>" in content:
+            try:
+                roles_start = content.find("<roles>") + len("<roles>")
+                roles_end = content.find("</roles>")
+                roles_json = content[roles_start:roles_end].strip()
+                roles_data = json.loads(roles_json)
+                roles = [RoleQuery(**role) for role in roles_data.get("roles", [])]
+                is_complete = True
+                # Remove the roles tag from the content
+                content = content[:content.find("<roles>")].strip() + content[content.find("</roles>") + len("</roles>"):].strip()
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                print(f"Error parsing roles from OpenAI response: {e}")
+                # Continue without roles
+        
+        return ChatResponse(
+            role="assistant",
+            content=content,
+            isComplete=is_complete,
+            roles=roles
+        )
+    
+    except Exception as e:
+        print(f"Error in chat endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error processing chat: {str(e)}")
+
+@app.post("/api/consultants/match-roles", response_model=RoleMatchResponse)
+async def match_consultants_by_roles(request: RoleMatchRequest):
+    """
+    Match consultants for multiple roles using vector search.
+    Performs a separate vector search for each role query.
+    """
+    if not client:
+        return RoleMatchResponse(roles=[])
+    
+    try:
+        role_results = []
+        
+        for role_query in request.roles:
+            # Perform vector search for this role
+            # Distance threshold: 0.3 for cosine distance (filters out poor matches)
+            MAX_DISTANCE = 0.3  # Only return matches with distance <= 0.3 (good matches)
+            
+            response = (
+                client.query
+                .get("Consultant", ["name", "email", "phone", "skills", "availability", "experience", "education"])
+                .with_near_text({
+                    "concepts": [role_query.query],
+                    "distance": MAX_DISTANCE
+                })
+                .with_additional(["id", "distance"])
+                .with_limit(10)  # Limit per role
+                .do()
+            )
+            
+            consultants = []
+            if "data" in response and "Get" in response["data"] and "Consultant" in response["data"]["Get"]:
+                results = response["data"]["Get"]["Consultant"]
+                
+                for consultant in results:
+                    consultant_id = consultant.get("_additional", {}).get("id")
+                    additional = consultant.get("_additional", {})
+                    
+                    # Get distance from Weaviate vector search
+                    # Distance is cosine distance: 0 = identical, higher = less similar
+                    # Convert distance to similarity score: similarity = 1 - distance
+                    # Then normalize to 0-100 scale
+                    distance_raw = additional.get("distance", None)
+                    try:
+                        distance = float(distance_raw) if distance_raw is not None else MAX_DISTANCE
+                    except (ValueError, TypeError):
+                        distance = MAX_DISTANCE
+                    
+                    # Convert distance to similarity score (0-100)
+                    # For cosine distance: similarity = 1 - distance, clamped to 0-1
+                    similarity = max(0.0, min(1.0, 1.0 - distance))
+                    match_score = round(similarity * 100, 1)
+                    
+                    consultant_data = {
+                        "id": consultant_id,
+                        "name": consultant.get("name", ""),
+                        "email": consultant.get("email", ""),
+                        "phone": consultant.get("phone", ""),
+                        "skills": consultant.get("skills", []),
+                        "availability": consultant.get("availability", "available"),
+                        "experience": consultant.get("experience", ""),
+                        "education": consultant.get("education", ""),
+                        "matchScore": match_score,
+                        "resumeId": None
+                    }
+                    
+                    # Check if PDF exists
+                    try:
+                        pdf_path = storage.get_path(consultant_id)
+                        if os.path.exists(pdf_path):
+                            consultant_data["resumeId"] = consultant_id
+                    except:
+                        pass
+                    
+                    consultants.append(consultant_data)
+            
+            role_results.append(RoleMatchResult(
+                role=role_query,
+                consultants=consultants
+            ))
+        
+        return RoleMatchResponse(roles=role_results)
+    
+    except Exception as e:
+        print(f"Error matching consultants by roles: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error matching consultants: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

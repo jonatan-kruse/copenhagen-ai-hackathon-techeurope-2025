@@ -102,3 +102,65 @@ export async function getOverview(): Promise<OverviewData> {
   return await response.json();
 }
 
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface RoleQuery {
+  title: string;
+  description: string;
+  query: string;
+  requiredSkills: string[];
+}
+
+export interface ChatResponse {
+  role: string;
+  content: string;
+  isComplete: boolean;
+  roles?: RoleQuery[];
+}
+
+export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatResponse> {
+  const response = await fetch(buildApiUrl("/chat"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ messages }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || `Failed to send chat message: ${response.statusText}`);
+  }
+  
+  return await response.json();
+}
+
+export interface RoleMatchResult {
+  role: RoleQuery;
+  consultants: Consultant[];
+}
+
+export interface RoleMatchResponse {
+  roles: RoleMatchResult[];
+}
+
+export async function matchConsultantsByRoles(roles: RoleQuery[]): Promise<RoleMatchResponse> {
+  const response = await fetch(buildApiUrl("/consultants/match-roles"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ roles }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || `Failed to match consultants: ${response.statusText}`);
+  }
+  
+  return await response.json();
+}
+

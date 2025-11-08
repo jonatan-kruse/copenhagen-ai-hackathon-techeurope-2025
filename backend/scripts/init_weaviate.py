@@ -40,8 +40,7 @@ consultant_schema = {
     "vectorizer": "text2vec-openai",
     "moduleConfig": {
         "text2vec-openai": {
-            "model": "ada",
-            "modelVersion": "002",
+            "model": "text-embedding-3-small",
             "type": "text"
         }
     },
@@ -49,37 +48,72 @@ consultant_schema = {
         {
             "name": "name",
             "dataType": ["string"],
-            "description": "The name of the consultant"
+            "description": "The name of the consultant",
+            "moduleConfig": {
+                "text2vec-openai": {
+                    "vectorizePropertyName": False
+                }
+            }
         },
         {
             "name": "email",
             "dataType": ["string"],
-            "description": "Email address of the consultant"
+            "description": "Email address of the consultant",
+            "moduleConfig": {
+                "text2vec-openai": {
+                    "vectorizePropertyName": False
+                }
+            }
         },
         {
             "name": "phone",
             "dataType": ["string"],
-            "description": "Phone number of the consultant"
+            "description": "Phone number of the consultant",
+            "moduleConfig": {
+                "text2vec-openai": {
+                    "vectorizePropertyName": False
+                }
+            }
         },
         {
             "name": "skills",
             "dataType": ["string[]"],
-            "description": "List of skills the consultant has"
+            "description": "List of skills the consultant has",
+            "moduleConfig": {
+                "text2vec-openai": {
+                    "vectorizePropertyName": False
+                }
+            }
         },
         {
             "name": "availability",
             "dataType": ["string"],
-            "description": "Availability status: available, busy, or unavailable"
+            "description": "Availability status: available, busy, or unavailable",
+            "moduleConfig": {
+                "text2vec-openai": {
+                    "vectorizePropertyName": False
+                }
+            }
         },
         {
             "name": "experience",
             "dataType": ["text"],
-            "description": "Experience description of the consultant"
+            "description": "Experience description of the consultant",
+            "moduleConfig": {
+                "text2vec-openai": {
+                    "vectorizePropertyName": False
+                }
+            }
         },
         {
             "name": "education",
             "dataType": ["text"],
-            "description": "Education details of the consultant"
+            "description": "Education details of the consultant",
+            "moduleConfig": {
+                "text2vec-openai": {
+                    "vectorizePropertyName": False
+                }
+            }
         }
     ]
 }
@@ -122,31 +156,29 @@ resume_schema = {
     ]
 }
 
-# Check if Consultant class exists, if so delete it
-try:
-    client.schema.delete_class("Consultant")
-    print("Deleted existing Consultant class")
-except:
-    print("No existing Consultant class found")
+# Check if Consultant class exists
+schema = client.schema.get()
+class_names = [c["class"] for c in schema.get("classes", [])]
 
-# Create the Consultant class
-try:
-    client.schema.create_class(consultant_schema)
-    print("Successfully created Consultant class in Weaviate")
-except Exception as e:
-    print(f"Error creating Consultant schema: {e}")
+if "Consultant" in class_names:
+    print("Consultant class already exists - preserving existing data")
+    print("Note: If you need to update the schema (e.g., change embedding model), you'll need to manually migrate the data")
+else:
+    # Create the Consultant class
+    try:
+        client.schema.create_class(consultant_schema)
+        print("Successfully created Consultant class in Weaviate")
+    except Exception as e:
+        print(f"Error creating Consultant schema: {e}")
 
-# Check if Resume class exists, if so delete it
-try:
-    client.schema.delete_class("Resume")
-    print("Deleted existing Resume class")
-except:
-    print("No existing Resume class found")
-
-# Create the Resume class
-try:
-    client.schema.create_class(resume_schema)
-    print("Successfully created Resume class in Weaviate")
-except Exception as e:
-    print(f"Error creating Resume schema: {e}")
+# Check if Resume class exists
+if "Resume" in class_names:
+    print("Resume class already exists - preserving existing data")
+else:
+    # Create the Resume class
+    try:
+        client.schema.create_class(resume_schema)
+        print("Successfully created Resume class in Weaviate")
+    except Exception as e:
+        print(f"Error creating Resume schema: {e}")
 

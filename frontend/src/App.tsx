@@ -1,5 +1,5 @@
 import { Routes, Route } from "react-router-dom";
-import { ProjectDescriptionPage } from "./pages/ProjectDescriptionPage";
+import { ChatPage } from "./pages/ChatPage";
 import { ConsultantResultsPage } from "./pages/ConsultantResultsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { Navbar } from "./components/Navbar";
@@ -10,7 +10,7 @@ export function App() {
     <>
       <Navbar />
       <Routes>
-        <Route path="/" element={<ProjectDescriptionPage />} />
+        <Route path="/" element={<ChatPage />} />
         <Route path="/results" element={<ConsultantResultsPage />} />
         <Route path="/admin" element={<AdminPage />} />
       </Routes>

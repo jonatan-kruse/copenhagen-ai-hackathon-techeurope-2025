@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Consultant } from "@/types/consultant";
-import { getAllConsultants, deleteConsultant, deleteConsultantsBatch, uploadResume } from "@/lib/api";
-import { Loader2, Trash2, MoreVertical, ChevronLeft, ChevronRight, Upload, CheckCircle2, XCircle } from "lucide-react";
+import { getAllConsultants, deleteConsultant, deleteConsultantsBatch, uploadResume, getResumeDownloadUrl } from "@/lib/api";
+import { Loader2, Trash2, MoreVertical, ChevronLeft, ChevronRight, Upload, CheckCircle2, XCircle, FileText } from "lucide-react";
 
 function getAvailabilityColor(availability: Consultant["availability"]) {
   switch (availability) {
@@ -223,6 +223,16 @@ export function AdminPage() {
     fileInputRef.current?.click();
   };
 
+  const handleDownloadResume = (resumeId: string, consultantName: string) => {
+    const url = getResumeDownloadUrl(resumeId);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${consultantName.replace(/\s+/g, "_")}_resume.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
       <div className="container mx-auto px-4 py-8 md:py-16 max-w-6xl">
@@ -373,6 +383,7 @@ export function AdminPage() {
                           <th className="px-3 py-1 text-left text-sm font-medium">Name</th>
                           <th className="px-3 py-1 text-left text-sm font-medium">Skills</th>
                           <th className="px-3 py-1 text-left text-sm font-medium">Availability</th>
+                          <th className="px-3 py-1 text-center text-sm font-medium">Resume</th>
                           <th className="px-3 py-1 text-right text-sm font-medium">Actions</th>
                         </tr>
                       </thead>
@@ -420,6 +431,22 @@ export function AdminPage() {
                                 <span className={`text-sm leading-tight ${getAvailabilityColor(consultant.availability)}`}>
                                   {getAvailabilityLabel(consultant.availability)}
                                 </span>
+                              </td>
+                              <td className="px-3 py-0.5 text-center">
+                                {consultant.resumeId ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => handleDownloadResume(consultant.resumeId!, consultant.name)}
+                                    title="Download resume PDF"
+                                    aria-label="Download resume PDF"
+                                  >
+                                    <FileText className="h-4 w-4 text-primary" />
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
                               </td>
                               <td className="px-3 py-0.5 text-right">
                                 <div className="relative inline-block" ref={(el) => {
