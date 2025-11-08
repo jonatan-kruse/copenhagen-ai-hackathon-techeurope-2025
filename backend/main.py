@@ -42,6 +42,9 @@ class ProjectDescription(BaseModel):
 class ConsultantResponse(BaseModel):
     consultants: List[Consultant]
 
+class DeleteRequest(BaseModel):
+    ids: List[str]
+
 @app.get("/")
 async def root():
     return {"message": "Consultant Matching API"}
@@ -133,6 +136,7 @@ async def get_all_consultants():
         response = (
             client.query
             .get("Consultant", ["name", "skills", "availability", "experience"])
+            .with_additional(["id"])
             .with_limit(100)
             .do()
         )
@@ -141,8 +145,12 @@ async def get_all_consultants():
         if "data" in response and "Get" in response["data"] and "Consultant" in response["data"]["Get"]:
             results = response["data"]["Get"]["Consultant"]
             for consultant in results:
+                # Extract ID from _additional field
+                additional = consultant.get("_additional", {})
+                consultant_id = additional.get("id")
+                
                 consultants.append({
-                    "id": consultant.get("_additional", {}).get("id"),
+                    "id": consultant_id,
                     "name": consultant.get("name", ""),
                     "skills": consultant.get("skills", []),
                     "availability": consultant.get("availability", "unknown"),
@@ -156,6 +164,70 @@ async def get_all_consultants():
         import traceback
         traceback.print_exc()
         return ConsultantResponse(consultants=[])
+
+@app.delete("/api/consultants/{consultant_id}")
+async def delete_consultant(consultant_id: str):
+    """
+    Delete a single consultant by ID.
+    """
+    if not client:
+        return {"success": False, "error": "Weaviate client not available"}
+    
+    try:
+        client.data_object.delete(
+            uuid=consultant_id,
+            class_name="Consultant"
+        )
+        return {"success": True, "message": f"Consultant {consultant_id} deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting consultant {consultant_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+@app.delete("/api/consultants")
+async def delete_consultants_batch(request: DeleteRequest):
+    """
+    Delete multiple consultants by IDs.
+    """
+    if not client:
+        return {"success": False, "error": "Weaviate client not available"}
+    
+    if not request.ids:
+        return {"success": False, "error": "No IDs provided"}
+    
+    try:
+        deleted_count = 0
+        errors = []
+        
+        for consultant_id in request.ids:
+            try:
+                client.data_object.delete(
+                    uuid=consultant_id,
+                    class_name="Consultant"
+                )
+                deleted_count += 1
+            except Exception as e:
+                errors.append({"id": consultant_id, "error": str(e)})
+        
+        if errors:
+            return {
+                "success": True,
+                "message": f"Deleted {deleted_count} consultant(s), {len(errors)} error(s)",
+                "deleted_count": deleted_count,
+                "errors": errors
+            }
+        
+        return {
+            "success": True,
+            "message": f"Successfully deleted {deleted_count} consultant(s)",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        print(f"Error deleting consultants: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
