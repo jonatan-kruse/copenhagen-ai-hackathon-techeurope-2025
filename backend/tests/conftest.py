@@ -149,7 +149,20 @@ def weaviate_client(weaviate_container):
 
 @pytest.fixture
 def clean_weaviate(weaviate_client):
-    """Clean Weaviate before each test."""
+    """Clean Weaviate before each test and ensure schema exists."""
+    # Ensure schema exists
+    try:
+        schema = weaviate_client.schema.get()
+        class_names = [c["class"] for c in schema.get("classes", [])]
+        if "Consultant" not in class_names:
+            weaviate_client.schema.create_class(CONSULTANT_SCHEMA)
+    except Exception:
+        # If schema check fails, try to create it
+        try:
+            weaviate_client.schema.create_class(CONSULTANT_SCHEMA)
+        except Exception:
+            pass  # Schema might already exist
+    
     # Delete all consultants - simplified and faster approach
     try:
         # Get all consultants in a single query (limit to reasonable number)
@@ -187,20 +200,30 @@ def mock_openai_resume_parser(monkeypatch):
     """Mock OpenAI for resume parsing."""
     # Set API key so the function doesn't fail on API key check
     monkeypatch.setenv("OPENAI_APIKEY", "test-key")
+    # Also patch os.getenv in the resume_parser module to ensure it picks up the test key
+    # Use start() and stop() to keep patches active throughout the test
+    os_getenv_patcher = patch('services.resume_parser.os.getenv', return_value="test-key")
+    openai_patcher = patch('services.resume_parser.OpenAI')
     
-    with patch('services.resume_parser.OpenAI') as mock_openai_class:
-        mock_client = MagicMock()
-        mock_openai_class.return_value = mock_client
-        
-        # Default successful response
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = '{"name": "John Doe", "email": "john@example.com", "phone": "123-456-7890", "skills": ["Python", "FastAPI"], "experience": "5 years", "education": "BS Computer Science"}'
-        mock_response.choices[0].finish_reason = "stop"
-        
-        mock_client.chat.completions.create.return_value = mock_response
-        
+    os_getenv_patcher.start()
+    mock_openai_class = openai_patcher.start()
+    
+    mock_client = MagicMock()
+    mock_openai_class.return_value = mock_client
+    
+    # Default successful response
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = '{"name": "John Doe", "email": "john@example.com", "phone": "123-456-7890", "skills": ["Python", "FastAPI"], "experience": "5 years", "education": "BS Computer Science"}'
+    mock_response.choices[0].finish_reason = "stop"
+    
+    mock_client.chat.completions.create.return_value = mock_response
+    
+    try:
         yield mock_client
+    finally:
+        openai_patcher.stop()
+        os_getenv_patcher.stop()
 
 
 @pytest.fixture
