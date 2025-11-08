@@ -7,14 +7,19 @@ import json
 import base64
 import random
 from io import BytesIO
+from typing import List
 from pdf2image import convert_from_bytes
 from openai import OpenAI
+from openai import OpenAIError
 from dotenv import load_dotenv
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import ConsultantData
+from logger_config import get_logger
 
 load_dotenv()
+
+logger = get_logger(__name__)
 
 # Common first and last names for generating realistic names
 FIRST_NAMES = [
@@ -63,7 +68,8 @@ def parse_resume_pdf(pdf_bytes: bytes) -> ConsultantData:
     """
     api_key = os.getenv("OPENAI_APIKEY")
     if not api_key:
-        raise ValueError("OPENAI_APIKEY not found in environment variables")
+        # Missing API key is a server configuration error, not a client error
+        raise RuntimeError("OPENAI_APIKEY not found in environment variables")
     
     client = OpenAI(api_key=api_key)
     
@@ -175,9 +181,11 @@ def parse_resume_pdf(pdf_bytes: bytes) -> ConsultantData:
     except ValueError as e:
         # Re-raise ValueError as-is (already formatted)
         raise
-    except Exception as e:
+    except OpenAIError as e:
         # Log the full error for debugging
-        import traceback
-        error_details = traceback.format_exc()
-        print(f"OpenAI API error details: {error_details}")
+        logger.error("OpenAI API error during resume parsing", exc_info=True)
         raise ValueError(f"OpenAI API error: {str(e)}")
+    except Exception as e:
+        # Let other exceptions bubble up (will be caught as 500 in main.py)
+        logger.error("Unexpected error during resume parsing", exc_info=True)
+        raise

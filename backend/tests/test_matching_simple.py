@@ -101,7 +101,8 @@ async def test_match_consultants_single_consultant(clean_weaviate, test_app, sam
 async def test_match_consultants_no_weaviate(test_app, sample_project_description, monkeypatch):
     """Test matching when Weaviate is unavailable."""
     from unittest.mock import patch
-    with patch('main.client', None):
+    import main
+    with patch('main.matching_service', None):
         async with test_app as client:
             response = await client.post("/api/consultants/match", json=sample_project_description)
             

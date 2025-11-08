@@ -78,5 +78,4 @@ const server = serve({
   },
 });
 
-console.log(`🚀 Server running at ${server.url}`);
-console.log(`📡 Backend proxy: ${BACKEND_URL}`);
+// Server started - logs available via Bun's built-in logging

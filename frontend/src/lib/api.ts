@@ -210,19 +210,6 @@ export async function matchConsultantsByRoles(roles: RoleQuery[]): Promise<RoleM
   }
   
   const data = await response.json();
-  console.log("Raw API response:", data);
-  console.log("Response roles:", data.roles);
-  if (data.roles) {
-    data.roles.forEach((roleResult: any, idx: number) => {
-      console.log(`API Role ${idx} (${roleResult.role?.title}):`, {
-        hasConsultants: !!roleResult.consultants,
-        consultantsType: typeof roleResult.consultants,
-        consultantsIsArray: Array.isArray(roleResult.consultants),
-        consultantsLength: roleResult.consultants?.length,
-        consultantsValue: roleResult.consultants
-      });
-    });
-  }
   return data;
 }
 

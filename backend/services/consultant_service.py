@@ -4,6 +4,9 @@ Service for consultant-related operations with Weaviate.
 import weaviate
 from typing import List, Dict, Optional
 from models import ConsultantData
+from logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ConsultantService:
@@ -21,8 +24,8 @@ class ConsultantService:
             schema = self.client.schema.get()
             class_names = [c["class"] for c in schema.get("classes", [])]
             return "Consultant" in class_names
-        except Exception as e:
-            print(f"Error checking schema: {e}")
+        except (weaviate.exceptions.WeaviateBaseError, Exception) as e:
+            logger.error("Error checking schema", exc_info=True)
             return False
     
     def create_consultant(self, consultant_data: ConsultantData, consultant_id: str) -> None:
@@ -69,10 +72,8 @@ class ConsultantService:
                     consultants.append(consultant_data)
             
             return consultants
-        except Exception as e:
-            print(f"Error fetching consultants: {e}")
-            import traceback
-            traceback.print_exc()
+        except (weaviate.exceptions.WeaviateBaseError, Exception) as e:
+            logger.error("Error fetching consultants", exc_info=True)
             return []
     
     def delete_consultant(self, consultant_id: str) -> bool:
@@ -86,10 +87,8 @@ class ConsultantService:
                 class_name="Consultant"
             )
             return True
-        except Exception as e:
-            print(f"Error deleting consultant {consultant_id}: {e}")
-            import traceback
-            traceback.print_exc()
+        except (weaviate.exceptions.WeaviateBaseError, Exception) as e:
+            logger.error(f"Error deleting consultant {consultant_id}", exc_info=True, extra={"consultant_id": consultant_id})
             return False
     
     def delete_consultants_batch(self, consultant_ids: List[str]) -> tuple[int, List[Dict]]:
@@ -134,7 +133,7 @@ class ConsultantService:
                     })
             
             return consultants
-        except Exception as e:
-            print(f"Error fetching consultants for overview: {e}")
+        except (weaviate.exceptions.WeaviateBaseError, Exception) as e:
+            logger.error("Error fetching consultants for overview", exc_info=True)
             return []
 

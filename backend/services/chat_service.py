@@ -5,7 +5,11 @@ import os
 import json
 from typing import Optional, List
 from openai import OpenAI
+from openai import OpenAIError
 from models import ChatMessage, RoleQuery, ChatResponse
+from logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ChatService:
@@ -91,7 +95,7 @@ Don't ask questions - be decisive and helpful. Speed is more important than perf
                     # Remove the roles tag from the content
                     content = content[:content.find("<roles>")].strip() + content[content.find("</roles>") + len("</roles>"):].strip()
                 except (json.JSONDecodeError, KeyError, ValueError) as e:
-                    print(f"Error parsing roles from OpenAI response: {e}")
+                    logger.warning("Error parsing roles from OpenAI response", exc_info=True)
                     # Continue without roles
             
             return ChatResponse(
@@ -101,9 +105,7 @@ Don't ask questions - be decisive and helpful. Speed is more important than perf
                 roles=roles
             )
         
-        except Exception as e:
-            print(f"Error in chat service: {e}")
-            import traceback
-            traceback.print_exc()
+        except (OpenAIError, ValueError, Exception) as e:
+            logger.error("Error in chat service", exc_info=True, extra={"message_count": len(messages)})
             raise Exception(f"Error processing chat: {str(e)}")
 

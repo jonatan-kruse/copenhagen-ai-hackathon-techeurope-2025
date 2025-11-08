@@ -13,59 +13,33 @@ env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  # Test job - DISABLED
-  # test:
-  #   name: Run Tests
-  #   runs-on: ubuntu-latest
-  #   
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #
-  #     - name: Setup Bun
-  #       uses: oven-sh/setup-bun@v2
-  #       with:
-  #         bun-version: latest
-  #
-  #     - name: Install frontend dependencies
-  #       working-directory: ./frontend
-  #       run: bun install
-  #
-  #     - name: Build frontend
-  #       working-directory: ./frontend
-  #       run: bun run build
-  #
-  #     - name: Setup Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: "3.11"
-  #         cache: "pip"
-  #
-  #     - name: Install backend dependencies
-  #       working-directory: ./backend
-  #       run: |
-  #         python -m pip install --upgrade pip
-  #         pip install -r requirements.txt
-  #
-  #     - name: Test Docker builds
-  #       run: |
-  #         # Test frontend Docker build
-  #         docker build -t projmatch-frontend:test -f frontend/Dockerfile ./frontend
-  #         docker run --rm -d -p 8080:80 --name test-frontend projmatch-frontend:test
-  #         sleep 3
-  #         curl -f http://localhost:8080 || exit 1
-  #         docker stop test-frontend
-  #         docker rmi projmatch-frontend:test
-  #         
-  #         # Test backend Docker build
-  #         docker build -t projmatch-backend:test -f backend/Dockerfile ./backend
-  #         docker run --rm -d -p 8001:8000 --name test-backend projmatch-backend:test
-  #         sleep 3
-  #         curl -f http://localhost:8001/health || exit 1
-  #         docker stop test-backend
-  #         docker rmi projmatch-backend:test
+  # Test job - runs in parallel with build
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # Build job
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        working-directory: ./backend
+        run: |
+          pytest tests/ -v
+
+  # Build job - runs in parallel with test
   build:
     name: Build Docker Images
     runs-on: ubuntu-latest
@@ -114,11 +88,11 @@ jobs:
             backend-image.tar.gz
           retention-days: 1
 
-  # Deploy job - Only runs if build job passes
+  # Deploy job - Only runs if both build and test jobs pass
   # Only runs in the "Prod" environment where secrets are available
   deploy:
     name: Deploy to Remote VM
-    needs: build
+    needs: [build, test]
     runs-on: ubuntu-latest
     environment: Prod
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.action == 'closed')

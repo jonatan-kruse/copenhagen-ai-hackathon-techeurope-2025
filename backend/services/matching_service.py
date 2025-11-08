@@ -2,8 +2,12 @@
 Service for matching consultants using vector search.
 """
 import weaviate
+import os
 from typing import List, Dict, Optional
 from services.consultant_service import ConsultantService
+from logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class MatchingService:
@@ -47,12 +51,11 @@ class MatchingService:
         
         # Check if PDF exists for this consultant
         try:
-            import os
             pdf_path = self.storage.get_path(consultant_id)
             if os.path.exists(pdf_path):
                 consultant_data["resumeId"] = consultant_id
-        except:
-            pass
+        except (OSError, ValueError, AttributeError) as e:
+            logger.debug(f"Could not check PDF path for consultant {consultant_id}: {e}")
         
         return consultant_data
     
@@ -101,14 +104,12 @@ class MatchingService:
         
         except ValueError:
             raise
-        except Exception as e:
+        except (weaviate.exceptions.WeaviateBaseError, Exception) as e:
             error_msg = str(e)
             # Check if it's a schema-related error
             if "no graphql provider" in error_msg.lower() or "no schema" in error_msg.lower():
                 raise ValueError("No consultants found in database. Please upload consultant resumes first.")
-            print(f"Error matching consultants: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Error matching consultants", exc_info=True, extra={"project_description": project_description[:100]})
             raise Exception(f"Error matching consultants: {error_msg}")
     
     def match_consultants_by_role(self, role_query: str, limit: int = 3) -> List[Dict]:
@@ -170,8 +171,8 @@ class MatchingService:
                             
                             consultant_data = self._enrich_consultant_data(consultant, consultant_id, 10.0)  # Low score for fallback matches
                             consultants.append(consultant_data)
-                except Exception as e:
-                    print(f"Error in fallback query: {e}")
+                except (weaviate.exceptions.WeaviateBaseError, Exception) as e:
+                    logger.warning("Error in fallback query", exc_info=True)
             
             # Now limit to top N AFTER calculating scores for all candidates
             consultants = sorted(consultants, key=lambda x: x["matchScore"], reverse=True)[:limit]
@@ -184,13 +185,11 @@ class MatchingService:
         
         except ValueError:
             raise
-        except Exception as e:
+        except (weaviate.exceptions.WeaviateBaseError, Exception) as e:
             error_msg = str(e)
             # Check if it's a schema-related error
             if "no graphql provider" in error_msg.lower() or "no schema" in error_msg.lower():
                 raise ValueError("No consultants found in database. Please upload consultant resumes first.")
-            print(f"Error matching consultants by role: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Error matching consultants by role", exc_info=True, extra={"role_query": role_query[:100]})
             raise Exception(f"Error matching consultants: {error_msg}")
 

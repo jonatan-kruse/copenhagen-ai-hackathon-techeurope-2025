@@ -2,10 +2,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Union
 import weaviate
 import os
 import uuid
+import logging
 from dotenv import load_dotenv
 from storage import LocalFileStorage
 from services.resume_parser import parse_resume_pdf
@@ -14,8 +15,13 @@ from services.matching_service import MatchingService
 from services.chat_service import ChatService
 from services.overview_service import OverviewService
 from models import ConsultantData, ChatRequest, ChatResponse, ChatMessage, RoleQuery, RoleMatchRequest, RoleMatchResponse, RoleMatchResult
+from logger_config import setup_logging, get_logger
 
 load_dotenv()
+
+# Set up logging
+setup_logging(os.getenv("LOG_LEVEL", "INFO"))
+logger = get_logger(__name__)
 
 app = FastAPI(title="Consultant Matching API", version="1.0.0")
 
@@ -34,8 +40,9 @@ app.add_middleware(
 weaviate_url = os.getenv("WEAVIATE_URL", "http://weaviate:8080")
 try:
     client = weaviate.Client(url=weaviate_url)
-except Exception as e:
-    print(f"Warning: Could not connect to Weaviate at {weaviate_url}: {e}")
+    logger.info(f"Successfully connected to Weaviate at {weaviate_url}")
+except (weaviate.exceptions.WeaviateBaseError, ConnectionError, Exception) as e:
+    logger.warning(f"Could not connect to Weaviate at {weaviate_url}: {e}", exc_info=True)
     client = None
 
 # Storage
@@ -73,7 +80,7 @@ class OverviewResponse(BaseModel):
     topSkills: List[SkillCount]
 
 @app.get("/")
-async def root():
+async def root() -> Dict[str, str]:
     return {"message": "Consultant Matching API"}
 
 @app.get("/health")
@@ -97,7 +104,7 @@ async def health():
     return {"status": "healthy", "database": "initialized"}
 
 @app.post("/api/consultants/match", response_model=ConsultantResponse)
-async def match_consultants(project: ProjectDescription):
+async def match_consultants(project: ProjectDescription) -> ConsultantResponse:
     """
     Match consultants based on project description using Weaviate vector search.
     """
@@ -106,22 +113,23 @@ async def match_consultants(project: ProjectDescription):
     
     try:
         consultants = matching_service.match_consultants(project.projectDescription, limit=3)
+        logger.info(f"Matched {len(consultants)} consultants for project description")
         return ConsultantResponse(consultants=consultants)
     except ValueError as e:
+        logger.warning(f"Validation error matching consultants: {e}")
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
+        logger.error("Error matching consultants", exc_info=True, extra={"endpoint": "/api/consultants/match"})
         error_msg = str(e)
-        print(f"Error matching consultants: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error matching consultants: {error_msg}")
+        raise HTTPException(status_code=500, detail="Error matching consultants. Please try again later.")
 
 @app.get("/api/consultants", response_model=ConsultantResponse)
-async def get_all_consultants():
+async def get_all_consultants() -> ConsultantResponse:
     """
     Get all consultants.
     """
     if not consultant_service:
+        logger.warning("Consultant service not available")
         return ConsultantResponse(consultants=[])
     
     try:
@@ -134,18 +142,17 @@ async def get_all_consultants():
                     pdf_path = storage.get_path(consultant["id"])
                     if os.path.exists(pdf_path):
                         consultant["resumeId"] = consultant["id"]
-                except:
-                    pass
+                except (OSError, ValueError) as e:
+                    logger.debug(f"Could not check resume for consultant {consultant.get('id')}: {e}")
         
+        logger.info(f"Retrieved {len(consultants)} consultants")
         return ConsultantResponse(consultants=consultants)
     except Exception as e:
-        print(f"Error fetching consultants: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Error fetching consultants", exc_info=True, extra={"endpoint": "/api/consultants"})
         return ConsultantResponse(consultants=[])
 
 @app.delete("/api/consultants/{consultant_id}")
-async def delete_consultant(consultant_id: str):
+async def delete_consultant(consultant_id: str) -> Dict[str, Any]:
     """
     Delete a single consultant by ID.
     """
@@ -155,17 +162,17 @@ async def delete_consultant(consultant_id: str):
     try:
         success = consultant_service.delete_consultant(consultant_id)
         if success:
+            logger.info(f"Successfully deleted consultant {consultant_id}")
             return {"success": True, "message": f"Consultant {consultant_id} deleted successfully"}
         else:
+            logger.warning(f"Failed to delete consultant {consultant_id}")
             return {"success": False, "error": "Failed to delete consultant"}
     except Exception as e:
-        print(f"Error deleting consultant {consultant_id}: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"success": False, "error": str(e)}
+        logger.error(f"Error deleting consultant {consultant_id}", exc_info=True, extra={"consultant_id": consultant_id})
+        return {"success": False, "error": "Failed to delete consultant"}
 
 @app.delete("/api/consultants")
-async def delete_consultants_batch(request: DeleteRequest):
+async def delete_consultants_batch(request: DeleteRequest) -> Dict[str, Any]:
     """
     Delete multiple consultants by IDs.
     """
@@ -179,6 +186,7 @@ async def delete_consultants_batch(request: DeleteRequest):
         deleted_count, errors = consultant_service.delete_consultants_batch(request.ids)
         
         if errors:
+            logger.warning(f"Batch delete completed with {len(errors)} error(s): {deleted_count} deleted")
             return {
                 "success": True,
                 "message": f"Deleted {deleted_count} consultant(s), {len(errors)} error(s)",
@@ -186,19 +194,18 @@ async def delete_consultants_batch(request: DeleteRequest):
                 "errors": errors
             }
         
+        logger.info(f"Successfully deleted {deleted_count} consultant(s)")
         return {
             "success": True,
             "message": f"Successfully deleted {deleted_count} consultant(s)",
             "deleted_count": deleted_count
         }
     except Exception as e:
-        print(f"Error deleting consultants: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"success": False, "error": str(e)}
+        logger.error("Error deleting consultants in batch", exc_info=True, extra={"count": len(request.ids)})
+        return {"success": False, "error": "Failed to delete consultants"}
 
 @app.post("/api/resumes/upload")
-async def upload_resume(file: UploadFile = File(...)):
+async def upload_resume(file: UploadFile = File(...)) -> Dict[str, Any]:
     """
     Upload a PDF resume, parse it, and create a Consultant entry in Weaviate.
     Returns the consultant object with ID.
@@ -207,7 +214,7 @@ async def upload_resume(file: UploadFile = File(...)):
         raise HTTPException(status_code=503, detail="Weaviate client not available")
     
     # Validate file type
-    if not file.filename.endswith('.pdf'):
+    if not file.filename or not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="File must be a PDF")
     
     # Generate UUID for consultant
@@ -216,6 +223,7 @@ async def upload_resume(file: UploadFile = File(...)):
     try:
         # Read PDF bytes
         pdf_bytes = await file.read()
+        logger.info(f"Uploading resume: {file.filename} ({len(pdf_bytes)} bytes)")
         
         # Parse resume - returns ConsultantData (pass bytes directly)
         consultant_data = parse_resume_pdf(pdf_bytes)
@@ -226,6 +234,8 @@ async def upload_resume(file: UploadFile = File(...)):
         # Insert into Weaviate Consultant collection with consultant_id as UUID
         consultant_service.create_consultant(consultant_data, consultant_id)
         
+        logger.info(f"Successfully uploaded and processed resume for {consultant_data.name} (ID: {consultant_id})")
+        
         # Return consultant object with ID and resumeId
         consultant_dict = consultant_data.model_dump()
         return {
@@ -234,22 +244,30 @@ async def upload_resume(file: UploadFile = File(...)):
             "resumeId": consultant_id
         }
     
+    except ValueError as e:
+        # Clean up PDF if parsing failed
+        try:
+            pdf_path = storage.get_path(consultant_id)
+            if os.path.exists(pdf_path):
+                os.unlink(pdf_path)
+        except (OSError, ValueError) as cleanup_error:
+            logger.warning(f"Failed to cleanup PDF after parse error: {cleanup_error}")
+        logger.error(f"Error parsing resume: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Error parsing resume: {str(e)}")
     except Exception as e:
         # Clean up PDF if Weaviate insertion failed
         try:
             pdf_path = storage.get_path(consultant_id)
             if os.path.exists(pdf_path):
                 os.unlink(pdf_path)
-        except:
-            pass
+        except (OSError, ValueError) as cleanup_error:
+            logger.warning(f"Failed to cleanup PDF after upload error: {cleanup_error}")
         
-        print(f"Error uploading resume: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error processing resume: {str(e)}")
+        logger.error("Error uploading resume", exc_info=True, extra={"upload_filename": file.filename})
+        raise HTTPException(status_code=500, detail="Error processing resume. Please try again later.")
 
 @app.get("/api/resumes/{resume_id}/pdf")
-async def get_resume_pdf(resume_id: str):
+async def get_resume_pdf(resume_id: str) -> FileResponse:
     """
     Retrieve the original PDF file by consultant/resume ID.
     The ID is the same as the consultant ID for uploaded resumes.
@@ -257,8 +275,10 @@ async def get_resume_pdf(resume_id: str):
     try:
         file_path = storage.get_path(resume_id)
         if not os.path.exists(file_path):
+            logger.warning(f"PDF not found for resume_id: {resume_id}")
             raise HTTPException(status_code=404, detail="PDF not found")
         
+        logger.debug(f"Retrieving PDF for resume_id: {resume_id}")
         return FileResponse(
             file_path,
             media_type="application/pdf",
@@ -267,12 +287,13 @@ async def get_resume_pdf(resume_id: str):
     except HTTPException:
         raise
     except FileNotFoundError:
+        logger.warning(f"PDF file not found for resume_id: {resume_id}")
         raise HTTPException(status_code=404, detail="PDF not found")
     except Exception as e:
-        print(f"Error retrieving PDF: {e}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving PDF: {str(e)}")
+        logger.error(f"Error retrieving PDF for resume_id: {resume_id}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error retrieving PDF")
 @app.get("/api/overview", response_model=OverviewResponse)
-async def get_overview():
+async def get_overview() -> OverviewResponse:
     """
     Get overview statistics: number of CVs (consultants), unique skills, and top 10 most common skills.
     """
@@ -282,7 +303,7 @@ async def get_overview():
     return overview_service.get_overview()
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest) -> ChatResponse:
     """
     Chat endpoint for interactive team assembly conversation.
     Uses OpenAI to ask clarifying questions and generate role queries.
@@ -293,19 +314,23 @@ async def chat(request: ChatRequest):
     if not chat_service:
         try:
             chat_service = ChatService()
+            logger.info("Chat service initialized")
         except ValueError as e:
+            logger.error("Failed to initialize chat service", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
     
     try:
-        return chat_service.process_chat(request.messages)
+        logger.debug(f"Processing chat request with {len(request.messages)} messages")
+        response = chat_service.process_chat(request.messages)
+        if response.isComplete:
+            logger.info(f"Chat completed with {len(response.roles or [])} roles generated")
+        return response
     except Exception as e:
-        print(f"Error in chat endpoint: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error processing chat: {str(e)}")
+        logger.error("Error in chat endpoint", exc_info=True, extra={"message_count": len(request.messages)})
+        raise HTTPException(status_code=500, detail="Error processing chat. Please try again later.")
 
 @app.post("/api/consultants/match-roles", response_model=RoleMatchResponse)
-async def match_consultants_by_roles(request: RoleMatchRequest):
+async def match_consultants_by_roles(request: RoleMatchRequest) -> RoleMatchResponse:
     """
     Match consultants for multiple roles using vector search.
     Performs a separate vector search for each role query.
@@ -317,13 +342,13 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
         role_results = []
         
         for role_query in request.roles:
-            print(f"Searching for role '{role_query.title}' with query: '{role_query.query}'")
+            logger.debug(f"Searching for role '{role_query.title}' with query: '{role_query.query}'")
             
             try:
                 consultants = matching_service.match_consultants_by_role(role_query.query, limit=3)
             except ValueError as e:
                 # If no matches found, return empty list for this role
-                print(f"No matches found for role '{role_query.title}': {e}")
+                logger.warning(f"No matches found for role '{role_query.title}': {e}")
                 consultants = []
             
             # Ensure consultants is always a list, never None
@@ -334,11 +359,11 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
                 role=role_query,
                 consultants=consultants
             )
-            print(f"Role '{role_query.title}': Found {len(consultants)} consultants")
+            logger.info(f"Role '{role_query.title}': Found {len(consultants)} consultants")
             role_results.append(role_result)
         
         response_data = RoleMatchResponse(roles=role_results)
-        print(f"Response has {len(response_data.roles)} roles")
+        logger.info(f"Match roles response: {len(response_data.roles)} roles processed")
         return response_data
     
     except HTTPException:
@@ -347,14 +372,13 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
         error_msg = str(e)
         # Check if it's a schema-related error
         if "no graphql provider" in error_msg.lower() or "no schema" in error_msg.lower():
+            logger.warning("Schema not initialized for role matching")
             raise HTTPException(
                 status_code=422,
                 detail="No consultants found in database. Please upload consultant resumes first."
             )
-        print(f"Error matching consultants by roles: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error matching consultants: {error_msg}")
+        logger.error("Error matching consultants by roles", exc_info=True, extra={"role_count": len(request.roles)})
+        raise HTTPException(status_code=500, detail="Error matching consultants. Please try again later.")
 
 if __name__ == "__main__":
     import uvicorn

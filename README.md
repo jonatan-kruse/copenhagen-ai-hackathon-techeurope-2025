@@ -1,6 +1,6 @@
 # Consultant Matching Web App
 
-A web application for consulting firm managers to find matching consultants for their projects using AI-powered vector search. The app uses semantic similarity matching with OpenAI embeddings to find the best consultants based on project requirements.
+AI-powered web application for matching consultants to projects using semantic similarity search with Weaviate and OpenAI embeddings.
 
 ## Features
 
@@ -9,14 +9,14 @@ A web application for consulting firm managers to find matching consultants for 
 - **Resume Management**: Upload and manage consultant resumes via admin interface
 - **Match Scoring**: Normalized match scores showing consultant relevance
 
-## Installation & Running
+## Quick Start
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- OpenAI API key (for embeddings)
+- OpenAI API key
 
-### Quick Start
+### Setup
 
 1. **Set up environment variables:**
    ```bash
@@ -24,7 +24,7 @@ A web application for consulting firm managers to find matching consultants for 
    # Add your OPENAI_APIKEY to .env
    ```
 
-2. **Start all services:**
+2. **Start services:**
    ```bash
    docker-compose up -d
    ```
@@ -35,17 +35,17 @@ A web application for consulting firm managers to find matching consultants for 
    ```
 
 4. **Access the application:**
-   - Frontend: http://localhost:5173 (or check docker-compose port mapping)
+   - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
    - Weaviate: http://localhost:8080
 
-### Local Development
+## Local Development
 
 **Backend:**
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
@@ -56,3 +56,18 @@ cd frontend
 bun install
 bun run dev
 ```
+
+**Run Tests:**
+```bash
+cd backend
+pytest tests/ -v
+```
+
+## CI/CD
+
+The project uses GitHub Actions for CI/CD:
+- **Test job**: Runs Python tests in parallel with Docker builds
+- **Build job**: Builds Docker images for frontend and backend
+- **Deploy job**: Deploys to production only if both test and build jobs pass
+
+Tests run automatically on push and pull requests to `main`.

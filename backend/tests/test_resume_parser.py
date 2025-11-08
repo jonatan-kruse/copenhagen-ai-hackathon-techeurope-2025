@@ -123,7 +123,7 @@ def test_parse_resume_pdf_success(sample_pdf_bytes):
 def test_parse_resume_pdf_missing_openai_key(sample_pdf_bytes):
     """Test parsing when OpenAI API key is missing."""
     with patch('services.resume_parser.os.getenv', return_value=None):
-        with pytest.raises(ValueError, match="OPENAI_APIKEY not found"):
+        with pytest.raises(RuntimeError, match="OPENAI_APIKEY not found"):
             parse_resume_pdf(sample_pdf_bytes)
 
 
@@ -139,7 +139,8 @@ def test_parse_resume_pdf_openai_api_failure(sample_pdf_bytes):
             mock_image = Image.new('RGB', (100, 100))
             mock_convert.return_value = [mock_image]
             
-            with pytest.raises(ValueError, match="OpenAI API error"):
+            # Generic Exception should bubble up (not converted to ValueError)
+            with pytest.raises(Exception, match="API error"):
                 parse_resume_pdf(sample_pdf_bytes)
 
 

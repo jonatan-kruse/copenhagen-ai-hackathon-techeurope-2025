@@ -58,13 +58,6 @@ export function ConsultantResultsPage() {
           // Role-based matching
           setIsRoleBased(true);
           const data = await matchConsultantsByRoles(roles);
-          console.log("Role match response:", data);
-          console.log("Role results:", data.roles);
-          if (data.roles) {
-            data.roles.forEach((roleResult, idx) => {
-              console.log(`Role ${idx} (${roleResult.role.title}):`, roleResult.consultants?.length || 0, "consultants");
-            });
-          }
           setRoleResults(data.roles || []);
         } else if (projectDescription) {
           // Legacy single query matching
@@ -284,9 +277,6 @@ export function ConsultantResultsPage() {
                 const rolesWithConsultants = roleResults.filter((roleResult) => {
                   const consultants = roleResult.consultants;
                   const hasConsultants = consultants && Array.isArray(consultants) && consultants.length > 0;
-                  if (!hasConsultants) {
-                    console.log(`Filtering out role "${roleResult.role.title}" - no consultants (length: ${consultants?.length || 'undefined'})`);
-                  }
                   return hasConsultants;
                 });
                 
