@@ -261,23 +261,25 @@ export function ConsultantResultsPage() {
               </Card>
             ) : isRoleBased ? (
               // Role-based results display
-              roleResults.length === 0 ? (
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="flex flex-col items-center justify-center py-12">
-                      <Users className="h-12 w-12 text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground text-center text-lg font-semibold">
-                        No consultants found for the specified roles.
-                      </p>
-                      <p className="text-muted-foreground text-center text-sm mt-2">
-                        Try adjusting your requirements or check back later.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-8">
-                  {roleResults.map((roleResult, roleIndex) => (
+              (() => {
+                const rolesWithConsultants = roleResults.filter((roleResult) => roleResult.consultants.length > 0);
+                return rolesWithConsultants.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex flex-col items-center justify-center py-12">
+                        <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground text-center text-lg font-semibold">
+                          No consultants found for the specified roles.
+                        </p>
+                        <p className="text-muted-foreground text-center text-sm mt-2">
+                          Try adjusting your requirements or check back later.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-8">
+                    {rolesWithConsultants.map((roleResult, roleIndex) => (
                     <div key={roleIndex} className="space-y-4">
                       <Card className="border-l-2 border-l-primary">
                         <CardHeader>
@@ -321,23 +323,11 @@ export function ConsultantResultsPage() {
                           )}
                         </CardHeader>
                       </Card>
-                      {roleResult.consultants.length === 0 ? (
-                        <Card>
-                          <CardContent className="pt-6">
-                            <div className="flex flex-col items-center justify-center py-8">
-                              <Users className="h-10 w-10 text-muted-foreground mb-3" />
-                              <p className="text-muted-foreground text-center font-semibold">
-                                No matching consultants found for this role.
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ) : (
-                        <>
-                          <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <Users className="h-5 w-5" />
-                            {roleResult.consultants.length} {roleResult.consultants.length === 1 ? "Candidate" : "Candidates"} Found
-                          </h3>
+                      <>
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                          <Users className="h-5 w-5" />
+                          {roleResult.consultants.length} {roleResult.consultants.length === 1 ? "Candidate" : "Candidates"} Found
+                        </h3>
                           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                             {roleResult.consultants.map((consultant, index) => {
                               const consultantId = consultant.id || `consultant-${roleIndex}-${index}`;
@@ -443,11 +433,11 @@ export function ConsultantResultsPage() {
                             })}
                           </div>
                         </>
-                      )}
                     </div>
                   ))}
                 </div>
-              )
+                );
+              })()
             ) : (
               // Legacy single query results
               consultants.length === 0 ? (
