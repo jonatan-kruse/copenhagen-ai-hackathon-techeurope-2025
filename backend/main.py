@@ -408,20 +408,25 @@ async def get_overview():
     """
     Get overview statistics: number of CVs (consultants), unique skills, and top 10 most common skills.
     """
-    if not client:
-        return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
-    
-    if not schema_exists():
-        return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
-    
     try:
+        if not client:
+            print("Warning: Weaviate client not available for overview")
+            return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
+        
+        if not schema_exists():
+            print("Warning: Consultant schema does not exist for overview")
+            return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
+        
         # Fetch all consultants to count and collect skills
+        # Use a reasonable limit to avoid timeouts
+        print("Fetching consultants for overview...")
         response = (
             client.query
             .get("Consultant", ["skills"])
-            .with_limit(1000)  # Large limit to get all consultants
+            .with_limit(500)  # Reduced limit to avoid timeouts
             .do()
         )
+        print(f"Overview query completed, processing results...")
         
         cv_count = 0
         all_skills = set()
@@ -430,6 +435,7 @@ async def get_overview():
         if "data" in response and "Get" in response["data"] and "Consultant" in response["data"]["Get"]:
             results = response["data"]["Get"]["Consultant"]
             cv_count = len(results)
+            print(f"Found {cv_count} consultants for overview")
             
             # Collect all unique skills and count occurrences
             for consultant in results:
@@ -443,6 +449,7 @@ async def get_overview():
         sorted_skills = sorted(skill_counts.items(), key=lambda x: x[1], reverse=True)
         top_skills = [SkillCount(skill=skill, count=count) for skill, count in sorted_skills[:10]]
         
+        print(f"Overview complete: {cv_count} CVs, {len(all_skills)} unique skills")
         return OverviewResponse(
             cvCount=cv_count,
             uniqueSkillsCount=len(all_skills),
@@ -453,6 +460,7 @@ async def get_overview():
         print(f"Error fetching overview: {e}")
         import traceback
         traceback.print_exc()
+        # Return empty response instead of raising exception to avoid breaking the UI
         return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -661,7 +669,11 @@ async def match_consultants_by_roles(request: RoleMatchRequest):
             # Now limit to top 3 AFTER calculating scores for all candidates
             consultants = sorted(consultants, key=lambda x: x["matchScore"], reverse=True)[:3]
             
-            role_results.append(RoleMatchResult(
+            # Ensure consultants is always a list, never None
+            if consultants is None:
+                consultants = []
+            
+            role_result = RoleMatchResult(
                 role=role_query,
                 consultants=consultants
             )

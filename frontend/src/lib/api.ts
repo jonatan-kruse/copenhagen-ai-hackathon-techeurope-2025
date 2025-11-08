@@ -112,13 +112,36 @@ export interface OverviewData {
 export async function getOverview(): Promise<OverviewData> {
   const endpoint = "/overview";
   const url = buildApiUrl(endpoint);
-  const response = await fetch(url);
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: response.statusText }));
-    const errorMessage = error.detail || error.error || response.statusText;
-    throw new Error(`GET ${endpoint} (${response.status}): ${errorMessage}`);
+  
+  // Add timeout for overview endpoint (30 seconds)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      // For 502/503/504 errors, provide more helpful messages
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        throw new Error(`GET ${endpoint} (${response.status}): Backend service unavailable. The server may be down or taking too long to respond.`);
+      }
+      
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const errorMessage = error.detail || error.error || response.statusText;
+      throw new Error(`GET ${endpoint} (${response.status}): ${errorMessage}`);
+    }
+    return await response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error(`GET ${endpoint}: Request timeout - backend took too long to respond`);
+      }
+      throw error;
+    }
+    throw new Error(`GET ${endpoint}: Unknown error - ${String(error)}`);
   }
-  return await response.json();
 }
 
 export interface ChatMessage {
