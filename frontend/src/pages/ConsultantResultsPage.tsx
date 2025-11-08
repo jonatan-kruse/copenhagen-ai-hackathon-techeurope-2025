@@ -31,11 +31,16 @@ export function ConsultantResultsPage() {
     navigate("/");
   };
 
-  // Redirect to home if no data (direct navigation)
+  // Redirect to home if no data (direct navigation or page reload)
   useEffect(() => {
-    if (!projectDescription && !roles) {
-      navigate("/", { replace: true });
-    }
+    // Use a small delay to ensure the component has rendered
+    const timer = setTimeout(() => {
+      if (!projectDescription && !roles) {
+        navigate("/", { replace: true });
+      }
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, [projectDescription, roles, navigate]);
 
   // Fetch consultants from API
@@ -171,9 +176,16 @@ export function ConsultantResultsPage() {
     return truncated + "...";
   };
 
-  // Show nothing while redirecting
+  // Show loading state while checking for data or redirecting
   if (!projectDescription && !roles) {
-    return null;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Redirecting to home...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
