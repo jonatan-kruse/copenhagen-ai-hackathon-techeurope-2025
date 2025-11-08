@@ -56,6 +56,15 @@ class ConsultantResponse(BaseModel):
 class DeleteRequest(BaseModel):
     ids: List[str]
 
+class SkillCount(BaseModel):
+    skill: str
+    count: int
+
+class OverviewResponse(BaseModel):
+    cvCount: int
+    uniqueSkillsCount: int
+    topSkills: List[SkillCount]
+
 @app.get("/")
 async def root():
     return {"message": "Consultant Matching API"}
@@ -357,6 +366,54 @@ async def get_resume_pdf(resume_id: str):
     except Exception as e:
         print(f"Error retrieving PDF: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving PDF: {str(e)}")
+@app.get("/api/overview", response_model=OverviewResponse)
+async def get_overview():
+    """
+    Get overview statistics: number of CVs (consultants), unique skills, and top 10 most common skills.
+    """
+    if not client:
+        return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
+    
+    try:
+        # Fetch all consultants to count and collect skills
+        response = (
+            client.query
+            .get("Consultant", ["skills"])
+            .with_limit(1000)  # Large limit to get all consultants
+            .do()
+        )
+        
+        cv_count = 0
+        all_skills = set()
+        skill_counts = {}  # Dictionary to count occurrences of each skill
+        
+        if "data" in response and "Get" in response["data"] and "Consultant" in response["data"]["Get"]:
+            results = response["data"]["Get"]["Consultant"]
+            cv_count = len(results)
+            
+            # Collect all unique skills and count occurrences
+            for consultant in results:
+                skills = consultant.get("skills", [])
+                if skills:
+                    all_skills.update(skills)
+                    for skill in skills:
+                        skill_counts[skill] = skill_counts.get(skill, 0) + 1
+        
+        # Get top 10 most common skills
+        sorted_skills = sorted(skill_counts.items(), key=lambda x: x[1], reverse=True)
+        top_skills = [SkillCount(skill=skill, count=count) for skill, count in sorted_skills[:10]]
+        
+        return OverviewResponse(
+            cvCount=cv_count,
+            uniqueSkillsCount=len(all_skills),
+            topSkills=top_skills
+        )
+    
+    except Exception as e:
+        print(f"Error fetching overview: {e}")
+        import traceback
+        traceback.print_exc()
+        return OverviewResponse(cvCount=0, uniqueSkillsCount=0, topSkills=[])
 
 if __name__ == "__main__":
     import uvicorn

@@ -56,3 +56,22 @@ export function getResumeDownloadUrl(resumeId: string): string {
   return `${API_BASE_URL}/api/resumes/${resumeId}/pdf`;
 }
 
+export interface SkillCount {
+  skill: string;
+  count: number;
+}
+
+export interface OverviewData {
+  cvCount: number;
+  uniqueSkillsCount: number;
+  topSkills: SkillCount[];
+}
+
+export async function getOverview(): Promise<OverviewData> {
+  const response = await fetch(`${API_BASE_URL}/api/overview`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch overview: ${response.statusText}`);
+  }
+  return await response.json();
+}
+
