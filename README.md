@@ -60,6 +60,8 @@ bun run dev
 **Run Tests:**
 ```bash
 cd backend
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
 # Run all tests (excluding performance tests)
 pytest tests/ -v -m "not performance"
 
@@ -68,6 +70,9 @@ pytest tests/test_performance.py -v -m performance
 
 # Run all tests including performance
 pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_dependencies.py -v
 ```
 
 ## CI/CD

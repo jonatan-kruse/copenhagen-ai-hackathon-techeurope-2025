@@ -33,10 +33,27 @@ echo "Schema initialization successful"
 # Seed mock data if SEED_MOCK_DATA is set to "true"
 if [ "${SEED_MOCK_DATA:-false}" = "true" ]; then
   echo "Seeding mock data..."
-  if python scripts/insert_mock_data.py; then
-    echo "Mock data seeding successful"
+  
+  # Build command with optional --force flag
+  seed_cmd="python scripts/insert_mock_data.py"
+  if [ "${FORCE_SEED:-false}" = "true" ]; then
+    echo "FORCE_SEED is enabled - will force re-seeding even if data exists"
+    seed_cmd="$seed_cmd --force"
+  fi
+  
+  # Run seeding command and check exit code
+  if $seed_cmd; then
+    exit_code=$?
+    if [ $exit_code -eq 0 ]; then
+      echo "Mock data seeding successful"
+    else
+      echo "ERROR: Mock data seeding failed with exit code $exit_code"
+      echo "Continuing anyway, but database may be empty..."
+    fi
   else
-    echo "Warning: Failed to seed mock data, continuing anyway..."
+    exit_code=$?
+    echo "ERROR: Mock data seeding failed with exit code $exit_code"
+    echo "Continuing anyway, but database may be empty..."
   fi
 fi
 

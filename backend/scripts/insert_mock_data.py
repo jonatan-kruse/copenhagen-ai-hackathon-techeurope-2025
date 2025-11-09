@@ -4,6 +4,9 @@ Insert mock consultant data into Weaviate.
 import weaviate
 import os
 import sys
+import argparse
+import json
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Add parent directory to path to import from main
@@ -14,6 +17,21 @@ load_dotenv()
 # Default to weaviate service name for Docker Compose, fallback to localhost for local dev
 weaviate_url = os.getenv("WEAVIATE_URL", "http://weaviate:8080")
 
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="Insert mock consultant data into Weaviate")
+parser.add_argument(
+    "--force",
+    action="store_true",
+    help="Force re-seeding even if data already exists"
+)
+parser.add_argument(
+    "--data-file",
+    type=str,
+    default=None,
+    help="Path to JSON file containing consultant data (default: data/mock_consultants.json)"
+)
+args = parser.parse_args()
+
 print(f"Connecting to Weaviate at {weaviate_url}")
 
 # Wait for Weaviate to be ready (with retries)
@@ -21,6 +39,7 @@ import time
 max_retries = 30
 retry_delay = 2
 
+client = None
 for attempt in range(max_retries):
     try:
         client = weaviate.Client(url=weaviate_url)
@@ -34,145 +53,148 @@ for attempt in range(max_retries):
             print(f"Retrying in {retry_delay} seconds...")
             time.sleep(retry_delay)
         else:
-            print(f"Failed to connect to Weaviate after {max_retries} attempts: {e}")
-            raise
+            print(f"ERROR: Failed to connect to Weaviate after {max_retries} attempts: {e}")
+            sys.exit(1)
 
-# Mock consultant data
-mock_consultants = [
-    {
-        "name": "Sarah Johnson",
-        "email": "sarah.johnson@example.com",
-        "phone": "+1-555-0101",
-        "skills": ["React", "TypeScript", "Node.js", "AWS"],
-        "availability": "available",
-        "experience": "8 years of full-stack development experience",
-        "education": "BS in Computer Science from MIT",
-    },
-    {
-        "name": "Michael Chen",
-        "email": "michael.chen@example.com",
-        "phone": "+1-555-0102",
-        "skills": ["Python", "Machine Learning", "Data Science", "TensorFlow"],
-        "availability": "available",
-        "experience": "10 years in AI and data engineering",
-        "education": "PhD in Machine Learning from Stanford",
-    },
-    {
-        "name": "Emma Williams",
-        "email": "emma.williams@example.com",
-        "phone": "+1-555-0103",
-        "skills": ["Java", "Spring Boot", "Microservices", "Kubernetes"],
-        "availability": "busy",
-        "experience": "7 years in enterprise software development",
-        "education": "MS in Software Engineering from Carnegie Mellon",
-    },
-    {
-        "name": "David Martinez",
-        "email": "david.martinez@example.com",
-        "phone": "+1-555-0104",
-        "skills": ["React", "Vue.js", "GraphQL", "PostgreSQL"],
-        "availability": "available",
-        "experience": "6 years in frontend and backend development",
-        "education": "BS in Computer Science from UC Berkeley",
-    },
-    {
-        "name": "Lisa Anderson",
-        "email": "lisa.anderson@example.com",
-        "phone": "+1-555-0105",
-        "skills": ["C#", ".NET", "Azure", "SQL Server"],
-        "availability": "available",
-        "experience": "9 years in Microsoft stack development",
-        "education": "BS in Information Systems from University of Washington",
-    },
-    {
-        "name": "James Wilson",
-        "email": "james.wilson@example.com",
-        "phone": "+1-555-0106",
-        "skills": ["Go", "Docker", "Kubernetes", "CI/CD"],
-        "availability": "unavailable",
-        "experience": "5 years in DevOps and cloud infrastructure",
-        "education": "BS in Computer Engineering from Georgia Tech",
-    },
-    {
-        "name": "Maria Garcia",
-        "email": "maria.garcia@example.com",
-        "phone": "+1-555-0107",
-        "skills": ["Python", "Django", "PostgreSQL", "REST APIs"],
-        "availability": "available",
-        "experience": "6 years in backend development",
-        "education": "BS in Computer Science from UT Austin",
-    },
-    {
-        "name": "Robert Brown",
-        "email": "robert.brown@example.com",
-        "phone": "+1-555-0108",
-        "skills": ["JavaScript", "React", "Next.js", "TypeScript"],
-        "availability": "available",
-        "experience": "5 years in frontend development",
-        "education": "BS in Web Development from Full Sail University",
-    },
-    {
-        "name": "Jennifer Lee",
-        "email": "jennifer.lee@example.com",
-        "phone": "+1-555-0109",
-        "skills": ["Swift", "iOS", "UIKit", "SwiftUI"],
-        "availability": "busy",
-        "experience": "7 years in mobile app development",
-        "education": "BS in Mobile Computing from San Jose State",
-    },
-    {
-        "name": "Thomas Anderson",
-        "email": "thomas.anderson@example.com",
-        "phone": "+1-555-0110",
-        "skills": ["Kotlin", "Android", "Jetpack Compose", "Firebase"],
-        "availability": "available",
-        "experience": "6 years in Android development",
-        "education": "BS in Software Engineering from Oregon State",
-    },
-]
+if client is None:
+    print("ERROR: Failed to establish Weaviate connection")
+    sys.exit(1)
 
-def insert_consultants():
+# Load consultant data from JSON file
+def load_consultant_data(data_file=None):
+    """Load consultant data from JSON file."""
+    if data_file is None:
+        # Default to data/mock_consultants.json relative to backend directory
+        script_dir = Path(__file__).parent
+        backend_dir = script_dir.parent
+        data_file = backend_dir / "data" / "mock_consultants.json"
+    else:
+        data_file = Path(data_file)
+    
+    if not data_file.exists():
+        print(f"ERROR: Data file not found: {data_file}")
+        sys.exit(1)
+    
+    try:
+        with open(data_file, "r") as f:
+            consultants = json.load(f)
+        print(f"Loaded {len(consultants)} consultants from {data_file}")
+        return consultants
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON in data file {data_file}: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: Failed to load data file {data_file}: {e}")
+        sys.exit(1)
+
+def insert_consultants(force=False, data_file=None):
     """Insert mock consultants into Weaviate."""
+    # Load consultant data
+    mock_consultants = load_consultant_data(data_file)
+    
+    if not mock_consultants:
+        print("ERROR: No consultant data to insert")
+        sys.exit(1)
+    
     # Check if class exists
+    print("Checking Weaviate schema...")
     try:
         schema = client.schema.get()
         class_names = [c["class"] for c in schema.get("classes", [])]
         if "Consultant" not in class_names:
-            print("Error: Consultant class does not exist. Please run init_weaviate.py first.")
-            return
+            print("ERROR: Consultant class does not exist. Please run init_weaviate.py first.")
+            sys.exit(1)
+        print("✓ Consultant class exists")
     except Exception as e:
-        print(f"Error checking schema: {e}")
-        return
+        print(f"ERROR: Failed to check schema: {e}")
+        sys.exit(1)
     
     # Check if database already has consultants
+    print("Checking for existing consultants...")
     try:
         result = client.query.get("Consultant", ["name"]).with_limit(1).do()
         existing_count = len(result.get("data", {}).get("Get", {}).get("Consultant", []))
         if existing_count > 0:
-            print(f"Database already contains consultant(s). Skipping mock data insertion.")
-            print("To force re-seeding, delete existing data first.")
-            return
+            if not force:
+                print(f"WARNING: Database already contains {existing_count} consultant(s). Skipping mock data insertion.")
+                print("Use --force flag to force re-seeding, or delete existing data first.")
+                sys.exit(0)  # Exit successfully since this is expected behavior
+            else:
+                print(f"Force flag set: will insert data even though {existing_count} consultant(s) already exist")
+        else:
+            print("✓ No existing consultants found")
     except Exception as e:
-        print(f"Warning: Could not check existing data: {e}")
-        # Continue anyway
+        print(f"WARNING: Could not check existing data: {e}")
+        print("Continuing with insertion anyway...")
     
     # Batch insert
-    with client.batch as batch:
-        batch.batch_size = 10
-        batch.num_workers = 1
-        
-        for consultant in mock_consultants:
-            try:
-                batch.add_data_object(
-                    data_object=consultant,
-                    class_name="Consultant"
-                )
-                print(f"Added consultant: {consultant['name']}")
-            except Exception as e:
-                print(f"Error adding consultant {consultant['name']}: {e}")
+    print(f"\nInserting {len(mock_consultants)} consultants...")
+    inserted_count = 0
+    errors = []
     
-    print(f"\nSuccessfully inserted {len(mock_consultants)} consultants into Weaviate")
+    try:
+        with client.batch as batch:
+            batch.batch_size = 10
+            batch.num_workers = 1
+            
+            for consultant in mock_consultants:
+                try:
+                    batch.add_data_object(
+                        data_object=consultant,
+                        class_name="Consultant"
+                    )
+                    inserted_count += 1
+                    if inserted_count % 5 == 0:
+                        print(f"  Added {inserted_count}/{len(mock_consultants)} consultants...")
+                except Exception as e:
+                    error_msg = f"Error adding consultant {consultant.get('name', 'Unknown')}: {e}"
+                    print(f"  {error_msg}")
+                    errors.append(error_msg)
+            
+            # Flush any remaining items in the batch before context exit
+            batch.flush()
+            
+            # Check for batch errors after flush
+            if hasattr(batch, 'errors') and batch.errors:
+                print(f"WARNING: {len(batch.errors)} errors occurred during batch insert:")
+                for error in batch.errors:
+                    print(f"  - {error}")
+                    errors.append(str(error))
+    except Exception as e:
+        print(f"ERROR: Batch insert failed: {e}")
+        sys.exit(1)
+    
+    # Verify insertion
+    print("\nVerifying insertion...")
+    try:
+        result = client.query.get("Consultant", ["name"]).with_limit(len(mock_consultants) + 10).do()
+        verified_count = len(result.get("data", {}).get("Get", {}).get("Consultant", []))
+        print(f"✓ Verified: {verified_count} consultants now in database")
+        
+        if verified_count < inserted_count:
+            print(f"WARNING: Expected {inserted_count} consultants but found {verified_count} in database")
+            if errors:
+                print("Some consultants may have failed to insert. Check errors above.")
+    except Exception as e:
+        print(f"WARNING: Could not verify insertion: {e}")
+    
+    if errors:
+        print(f"\nWARNING: Completed with {len(errors)} error(s). {inserted_count} consultants inserted.")
+    else:
+        print(f"\n✓ Successfully inserted {inserted_count} consultants into Weaviate")
+    
+    return inserted_count, errors
 
 if __name__ == "__main__":
-    insert_consultants()
+    try:
+        insert_consultants(force=args.force, data_file=args.data_file)
+        sys.exit(0)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 

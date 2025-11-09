@@ -28,14 +28,12 @@ def get_weaviate_client() -> Optional[weaviate.Client]:
     """Get or create Weaviate client."""
     global _weaviate_client
     # Check if main module has a client (for test compatibility)
-    # If main.client is explicitly set (even to None), use it
+    # Only use main.client if it's explicitly set to a non-None value
     import main
-    if hasattr(main, 'client'):
-        # If main.client is None, clear cache and return None
-        if main.client is None:
-            _weaviate_client = None
+    if hasattr(main, 'client') and main.client is not None:
         return main.client
     
+    # If main.client is None or doesn't exist, create our own client
     if _weaviate_client is None:
         settings = get_settings()
         try:
@@ -67,12 +65,9 @@ def get_consultant_service(
     """Get or create ConsultantService."""
     global _consultant_service
     # Check if main module has consultant_service (for test compatibility)
-    # If main.consultant_service is explicitly set (even to None), use it
+    # Only use main.consultant_service if it's explicitly set to a non-None value
     import main
-    if hasattr(main, 'consultant_service'):
-        # If main.consultant_service is None, clear cache and return None
-        if main.consultant_service is None:
-            _consultant_service = None
+    if hasattr(main, 'consultant_service') and main.consultant_service is not None:
         return main.consultant_service
     
     # If client is None, clear cache and return None
@@ -80,6 +75,7 @@ def get_consultant_service(
         _consultant_service = None
         return None
     
+    # If main.consultant_service is None or doesn't exist, create our own service
     if _consultant_service is None:
         _consultant_service = ConsultantService(client)
     return _consultant_service
